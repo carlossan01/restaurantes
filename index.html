@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Mis restaurantes</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<style>
+  :root {
+    --bg: #F3F5F2;
+    --panel: #FFFFFF;
+    --ink: #1C2420;
+    --muted: #5F6B65;
+    --line: #DCE2DD;
+    --chip: #E7ECE8;
+    --accent: #1E6B47;
+    --s-top: #1E6B47;
+    --s-good: #5E9634;
+    --s-mid: #D39A1C;
+    --s-low: #9A6A5E;
+    --s-none: #9AA39E;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #141916;
+      --panel: #1B221E;
+      --ink: #E8EDE9;
+      --muted: #9DA9A2;
+      --line: #2C3631;
+      --chip: #26302B;
+      --accent: #5CC08C;
+      --s-top: #3FA873;
+      --s-good: #7DB54F;
+      --s-mid: #E0AD3A;
+      --s-low: #B98576;
+      --s-none: #6E7872;
+      color-scheme: dark;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+    font-size: 15px;
+    line-height: 1.4;
+  }
+  #app { display: flex; height: 100%; }
+  #panel {
+    width: 400px; flex-shrink: 0;
+    display: flex; flex-direction: column;
+    background: var(--panel);
+    border-right: 1px solid var(--line);
+    min-height: 0;
+  }
+  #map { flex: 1; min-height: 0; background: var(--bg); }
+
+  header { padding: 22px 20px 14px; }
+  h1 { margin: 0; font-size: 2rem; font-weight: 800; letter-spacing: -0.02em; line-height: 1.05; }
+  #status { margin: 6px 0 0; color: var(--muted); font-size: 0.9rem; }
+  #status button {
+    font: inherit; color: var(--accent); background: none; border: 0; padding: 0;
+    text-decoration: underline; cursor: pointer;
+  }
+
+  .controls { padding: 0 20px 12px; display: grid; gap: 10px; }
+  .row { display: flex; gap: 8px; }
+  input[type=search], select {
+    font: inherit; color: var(--ink); background: var(--bg);
+    border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px;
+  }
+  input[type=search] { flex: 1; min-width: 0; }
+  input:focus-visible, select:focus-visible, button:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 2px;
+  }
+  #chips { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: thin; }
+  .chip {
+    font: inherit; font-size: 0.85rem; white-space: nowrap; cursor: pointer;
+    background: var(--chip); color: var(--ink);
+    border: 1px solid transparent; border-radius: 999px; padding: 5px 12px;
+  }
+  .chip[aria-pressed="true"] { background: var(--ink); color: var(--panel); }
+
+  #list { flex: 1; overflow-y: auto; border-top: 1px solid var(--line); min-height: 0; }
+  .item {
+    display: grid; grid-template-columns: 52px 1fr; gap: 12px; align-items: center;
+    width: 100%; text-align: left; font: inherit; color: inherit;
+    background: none; border: 0; border-bottom: 1px solid var(--line);
+    padding: 12px 20px; cursor: pointer;
+  }
+  .item:hover { background: var(--bg); }
+  .item.active { background: var(--chip); }
+  .score {
+    width: 52px; height: 52px; border-radius: 50%;
+    display: grid; place-items: center;
+    font-size: 1.25rem; font-weight: 800; color: #fff; letter-spacing: -0.02em;
+  }
+  .name { font-weight: 600; font-size: 1.02rem; margin: 0; }
+  .meta { margin: 2px 0 0; color: var(--muted); font-size: 0.88rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .nopin { margin: 3px 0 0; font-size: 0.8rem; color: var(--s-low); }
+  .empty { padding: 28px 20px; color: var(--muted); }
+  .empty strong { color: var(--ink); display: block; margin-bottom: 4px; }
+  .empty button {
+    margin-top: 12px; font: inherit; cursor: pointer;
+    background: var(--ink); color: var(--panel); border: 0; border-radius: 10px; padding: 8px 14px;
+  }
+
+  .leaflet-popup-content-wrapper, .leaflet-popup-tip { background: var(--panel); color: var(--ink); }
+  .leaflet-popup-content { font-family: inherit; margin: 12px 14px; }
+  .pop h3 { margin: 0 0 4px; font-size: 1.05rem; }
+  .pop p { margin: 0 0 3px; color: var(--muted); font-size: 0.88rem; }
+  .pop a { color: var(--accent); font-weight: 600; }
+
+  @media (max-width: 760px) {
+    #app { flex-direction: column; }
+    #map { flex: 0 0 42vh; flex: 0 0 42dvh; }
+    #panel { width: 100%; flex: 1; border-right: 0; border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom, 0px); }
+    header { padding: 14px 16px 10px; }
+    h1 { font-size: 1.5rem; }
+    .controls { padding: 0 16px 10px; }
+    .item { padding: 10px 16px; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <aside id="panel">
+    <header>
+      <h1>Mis restaurantes</h1>
+      <p id="status">Cargando la hoja…</p>
+    </header>
+    <div class="controls">
+      <div class="row">
+        <input type="search" id="q" placeholder="Busca por nombre, estilo o zona" aria-label="Buscar restaurantes">
+        <select id="sort" aria-label="Ordenar">
+          <option value="score">Mejor puntaje</option>
+          <option value="name">Nombre A–Z</option>
+        </select>
+      </div>
+      <div id="chips" role="group" aria-label="Filtrar por estilo"></div>
+    </div>
+    <div id="list" aria-live="polite"></div>
+  </aside>
+  <div id="map" role="region" aria-label="Mapa de restaurantes"></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+// ===== Configuración =====
+// URL de la hoja publicada como CSV (Archivo → Compartir → Publicar en la web → CSV)
+const SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vStf526UD4ugy9VWSJdkMZRFndOHLKgRnyJHVYH8fv8v4--9QBx6bifwtFIsZmycvege-2WdaR6OV1I/pub?output=csv";
+const PROXY = url => "https://api.allorigins.win/raw?url=" + encodeURIComponent(url);
+const START_VIEW = [4.665, -74.06]; // Bogotá
+
+// ===== Utilidades =====
+const norm = s => (s ?? "").toString().normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const nums = s => ((s ?? "").toString().match(/-?\d+(?:[.,]\d+)?/g) || []).map(n => parseFloat(n.replace(",", ".")));
+
+// Lee una columna sin importar mayúsculas ni tildes en el encabezado
+function col(row, ...names) {
+  for (const key of Object.keys(row)) {
+    if (names.includes(norm(key))) return (row[key] ?? "").toString().trim();
+  }
+  return "";
+}
+
+function tier(score) {
+  if (score == null) return "var(--s-none)";
+  if (score >= 9) return "var(--s-top)";
+  if (score >= 8) return "var(--s-good)";
+  if (score >= 7) return "var(--s-mid)";
+  return "var(--s-low)";
+}
+function fmtScore(score) {
+  if (score == null) return "–";
+  return Number.isInteger(score) ? String(score) : score.toFixed(1).replace(".", ",");
+}
+
+// ===== Mapa =====
+const CARTO_KEY = "cb1_4na0_1_97ca5fd991ca6b67f507fe2e";
+const map = L.map("map", { zoomControl: true }).setView(START_VIEW, 12);
+L.tileLayer(`https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png?key=${CARTO_KEY}`, {
+  maxZoom: 19,
+  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
+}).addTo(map);
+const layer = L.layerGroup().addTo(map);
+
+// ===== Estado =====
+const state = { all: [], style: null, q: "", sort: "score", activeId: null };
+const markers = new Map();
+
+// ===== Datos =====
+function parseRow(row, i) {
+  const name = col(row, "restaurante", "nombre");
+  if (!name) return null;
+
+  let location = col(row, "ubicacion", "direccion");
+  const city = col(row, "ciudad");
+  if (city && !norm(location).includes(norm(city))) location = location ? `${location}, ${city}` : city;
+
+  let lat = nums(col(row, "lat", "latitud"))[0];
+  let lng = nums(col(row, "lng", "lon", "long", "longitud"))[0];
+  if (!(Number.isFinite(lat) && Number.isFinite(lng))) {
+    const c = nums(col(row, "coordenadas", "coords"));
+    lat = c[0]; lng = c[1];
+  }
+  const hasPin = Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180;
+
+  const s = nums(col(row, "puntaje", "calificacion", "nota"))[0];
+  const style = col(row, "estilo", "tipo");
+
+  return {
+    id: i,
+    name,
+    style,
+    tags: style.split(/[,/|]+/).map(t => t.trim()).filter(Boolean),
+    location,
+    score: Number.isFinite(s) ? s : null,
+    lat: hasPin ? lat : null,
+    lng: hasPin ? lng : null,
+    search: norm(`${name} ${style} ${location}`)
+  };
+}
+
+async function fetchCSV() {
+  const bust = (SHEET_URL.includes("?") ? "&" : "?") + "t=" + Date.now();
+  try {
+    const r = await fetch(SHEET_URL + bust, { cache: "no-store" });
+    if (!r.ok) throw new Error(r.status);
+    return await r.text();
+  } catch (e) {
+    // Respaldo: proxy público, por si el navegador bloquea la lectura directa
+    const r = await fetch(PROXY(SHEET_URL + bust), { cache: "no-store" });
+    if (!r.ok) throw new Error(r.status);
+    return await r.text();
+  }
+}
+
+async function load() {
+  setStatus("Cargando la hoja…");
+  try {
+    const text = await fetchCSV();
+    if (/^\s*<!doctype html|<html/i.test(text)) throw new Error("La URL no devuelve un CSV");
+    const { data: grid } = Papa.parse(text, { skipEmptyLines: true });
+    // La fila de encabezados es la que dice "Restaurante", esté donde esté
+    const h = grid.findIndex(r => r.some(c => ["restaurante", "nombre"].includes(norm(c))));
+    if (h < 0) throw new Error("No se encontró la fila de encabezados");
+    const headers = grid[h];
+    const rows = grid.slice(h + 1).map(r => Object.fromEntries(headers.map((k, i) => [k || `col${i}`, r[i] ?? ""])));
+    state.all = rows.map(parseRow).filter(Boolean);
+    buildChips();
+    render(true);
+    const time = new Date().toLocaleTimeString("es-CO", { hour: "numeric", minute: "2-digit" });
+    state.loadedAt = time;
+    updateStatus();
+  } catch (err) {
+    console.error(err);
+    setStatus("No se pudo leer la hoja.");
+    document.getElementById("list").innerHTML = `
+      <div class="empty">
+        <strong>No se pudo leer la hoja de Google.</strong>
+        Revisa que siga publicada en la web como CSV y que la URL del código sea la correcta.
+        <br><button type="button" onclick="load()">Reintentar</button>
+      </div>`;
+  }
+}
+
+// ===== Interfaz =====
+function setStatus(html) { document.getElementById("status").innerHTML = html; }
+
+function updateStatus(shown) {
+  const total = state.all.length;
+  const n = shown ?? total;
+  const noPin = state.all.filter(r => r.lat == null).length;
+  let txt = n === total ? `${total} restaurantes` : `${n} de ${total} restaurantes`;
+  if (noPin) txt += `. ${noPin} sin coordenadas`;
+  if (state.loadedAt) txt += `. Datos de las ${state.loadedAt}, <button type="button" onclick="load()">actualizar</button>`;
+  setStatus(txt);
+}
+
+function buildChips() {
+  const freq = new Map();
+  for (const r of state.all) for (const t of r.tags) {
+    const k = norm(t);
+    if (!freq.has(k)) freq.set(k, { label: t, n: 0 });
+    freq.get(k).n++;
+  }
+  const tags = [...freq.entries()].sort((a, b) => b[1].n - a[1].n);
+  if (state.style && !freq.has(state.style)) state.style = null;
+
+  const box = document.getElementById("chips");
+  box.innerHTML = "";
+  const add = (key, label) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "chip";
+    b.textContent = label;
+    b.setAttribute("aria-pressed", String(state.style === key));
+    b.addEventListener("click", () => {
+      state.style = state.style === key ? null : key;
+      box.querySelectorAll(".chip").forEach(c => c.setAttribute("aria-pressed", "false"));
+      b.setAttribute("aria-pressed", String(state.style === key));
+      if (state.style === null) box.firstChild.setAttribute("aria-pressed", "true");
+      render(true);
+    });
+    box.appendChild(b);
+  };
+  add(null, "Todos");
+  tags.forEach(([key, v]) => add(key, v.label));
+}
+
+function filtered() {
+  const q = norm(state.q);
+  const out = state.all.filter(r =>
+    (!q || r.search.includes(q)) &&
+    (!state.style || r.tags.some(t => norm(t) === state.style))
+  );
+  if (state.sort === "score") out.sort((a, b) => (b.score ?? -1) - (a.score ?? -1) || a.name.localeCompare(b.name, "es"));
+  else out.sort((a, b) => a.name.localeCompare(b.name, "es"));
+  return out;
+}
+
+function popupHTML(r) {
+  const dir = `https://www.google.com/maps/dir/?api=1&destination=${r.lat},${r.lng}`;
+  return `<div class="pop">
+    <h3>${esc(r.name)}</h3>
+    ${r.style ? `<p>${esc(r.style)}</p>` : ""}
+    ${r.location ? `<p>${esc(r.location)}</p>` : ""}
+    <p>Puntaje: <strong style="color:var(--ink)">${fmtScore(r.score)}</strong></p>
+    <a href="${dir}" target="_blank" rel="noopener">Cómo llegar</a>
+  </div>`;
+}
+
+function render(fit) {
+  const rows = filtered();
+  const list = document.getElementById("list");
+  layer.clearLayers();
+  markers.clear();
+  list.innerHTML = "";
+
+  if (!rows.length) {
+    list.innerHTML = state.all.length
+      ? `<div class="empty"><strong>Ningún restaurante coincide.</strong>Prueba otra búsqueda o elige «Todos».</div>`
+      : `<div class="empty"><strong>La hoja está vacía.</strong>Agrega restaurantes en la hoja y pulsa actualizar.</div>`;
+    updateStatus(0);
+    return;
+  }
+
+  const frag = document.createDocumentFragment();
+  for (const r of rows) {
+    if (r.lat != null) {
+      const m = L.circleMarker([r.lat, r.lng], {
+        radius: 9, weight: 2, color: "#fff",
+        fillColor: getComputedStyle(document.documentElement).getPropertyValue(tier(r.score).slice(4, -1)).trim(),
+        fillOpacity: 1
+      }).bindPopup(popupHTML(r));
+      m.on("click", () => highlight(r.id, true));
+      layer.addLayer(m);
+      markers.set(r.id, m);
+    }
+
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "item" + (state.activeId === r.id ? " active" : "");
+    b.dataset.id = r.id;
+    b.innerHTML = `
+      <span class="score" style="background:${tier(r.score)}">${fmtScore(r.score)}</span>
+      <span>
+        <p class="name">${esc(r.name)}</p>
+        <p class="meta">${esc([r.style, r.location].filter(Boolean).join(", "))}</p>
+        ${r.lat == null ? `<p class="nopin">Sin coordenadas en la hoja</p>` : ""}
+      </span>`;
+    b.addEventListener("click", () => {
+      highlight(r.id, false);
+      const m = markers.get(r.id);
+      if (m) { map.flyTo(m.getLatLng(), 16, { duration: 0.6 }); m.openPopup(); }
+    });
+    frag.appendChild(b);
+  }
+  list.appendChild(frag);
+  updateStatus(rows.length);
+
+  if (fit && markers.size) {
+    const b = L.latLngBounds([...markers.values()].map(m => m.getLatLng()));
+    map.fitBounds(b, { padding: [40, 40], maxZoom: 15 });
+  }
+}
+
+function highlight(id, scroll) {
+  state.activeId = id;
+  document.querySelectorAll(".item").forEach(el => el.classList.toggle("active", Number(el.dataset.id) === id));
+  if (scroll) document.querySelector(`.item[data-id="${id}"]`)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+}
+
+let t;
+document.getElementById("q").addEventListener("input", e => {
+  clearTimeout(t);
+  t = setTimeout(() => { state.q = e.target.value; render(true); }, 150);
+});
+document.getElementById("sort").addEventListener("change", e => { state.sort = e.target.value; render(false); });
+
+load();
+</script>
+</body>
+</html>
