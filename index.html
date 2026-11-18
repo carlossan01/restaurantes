@@ -70,7 +70,36 @@
     text-decoration: underline; cursor: pointer;
   }
 
+  .ask { padding: 0 20px 14px; display: grid; gap: 7px; }
+  .ask label { font-weight: 600; font-size: 0.95rem; }
+  .ask input {
+    flex: 1; min-width: 0; font: inherit; color: var(--ink); background: var(--bg);
+    border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px;
+  }
+  .ask button[type=submit] {
+    font: inherit; font-weight: 600; white-space: nowrap; cursor: pointer;
+    background: var(--accent); color: var(--panel); border: 0; border-radius: 10px; padding: 9px 14px;
+  }
+  .examples { display: flex; flex-wrap: wrap; gap: 6px; }
+  .examples button {
+    font: inherit; font-size: 0.8rem; cursor: pointer; color: var(--ink);
+    background: var(--chip); border: 0; border-radius: 999px; padding: 4px 10px;
+  }
+  .examples button:hover { background: var(--line); }
+
+  .reco-head { padding: 14px 20px; border-bottom: 1px solid var(--line); display: grid; gap: 8px; }
+  .reco-head h2 { margin: 0; font-size: 1.1rem; font-weight: 800; }
+  .reco-head .back {
+    justify-self: start; font: inherit; font-size: 0.88rem; cursor: pointer;
+    color: var(--accent); background: none; border: 0; padding: 0; text-decoration: underline;
+  }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chips span { font-size: 0.8rem; background: var(--chip); border-radius: 999px; padding: 3px 10px; }
+  .note { margin: 0; font-size: 0.85rem; color: var(--muted); }
+  .why { margin: 3px 0 0; font-size: 0.82rem; color: var(--accent); font-weight: 600; }
+
   .controls { padding: 0 20px 12px; display: grid; gap: 10px; }
+  .controls[hidden], .examples[hidden] { display: none; }
   .row { display: flex; gap: 8px; }
   input[type=search], select {
     font: inherit; color: var(--ink); background: var(--bg);
@@ -91,7 +120,7 @@
 
   #list { flex: 1; overflow-y: auto; border-top: 1px solid var(--line); min-height: 0; }
   .item {
-    display: grid; grid-template-columns: 52px 1fr; gap: 12px; align-items: center;
+    display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 12px; align-items: center;
     width: 100%; text-align: left; font: inherit; color: inherit;
     background: none; border: 0; border-bottom: 1px solid var(--line);
     padding: 12px 20px; cursor: pointer;
@@ -142,6 +171,8 @@
     #panel { width: 100%; flex: 1; border-right: 0; border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom, 0px); }
     header { padding: 14px 16px 10px; }
     h1 { font-size: 1.5rem; }
+    .ask { padding: 0 16px 12px; }
+    .reco-head { padding: 12px 16px; }
     .controls { padding: 0 16px 10px; }
     .item { padding: 10px 16px; }
   }
@@ -154,6 +185,19 @@
       <h1>Mis restaurantes</h1>
       <p id="status">Cargando la hoja…</p>
     </header>
+    <form id="ask" class="ask" autocomplete="off">
+      <label for="ask-q">¿Qué se te antoja?</label>
+      <div class="row">
+        <input type="text" id="ask-q" placeholder="Ej: sushi, presupuesto de 80 mil">
+        <button type="submit">Recomiéndame</button>
+      </div>
+      <div class="examples" aria-label="Ejemplos">
+        <button type="button">Sushi hasta 80 mil</button>
+        <button type="button">Algo dulce en Bogotá</button>
+        <button type="button">Carne para 4 con 300 mil</button>
+        <button type="button">Algo especial para una cita</button>
+      </div>
+    </form>
     <div class="controls">
       <input type="search" id="q" placeholder="Busca por nombre o dirección" aria-label="Buscar restaurantes">
       <div class="filters">
@@ -269,7 +313,7 @@ function fitView(rows) {
 }
 
 // ===== Estado =====
-const state = { all: [], city: "", style: "", score: "", q: "", sort: "score", activeId: null };
+const state = { all: [], city: "", style: "", score: "", q: "", sort: "score", activeId: null, reco: null };
 const markers = new Map();
 let pendingFly = null;
 
@@ -293,6 +337,12 @@ function parseRow(row, i) {
   const s = nums(col(row, "puntaje", "calificacion", "nota"))[0];
   const style = col(row, "estilo", "tipo");
 
+  // Columna opcional de precio por persona: "60000", "60.000", "60 mil" o "$$"
+  const priceRaw = col(row, "precio", "precio por persona", "costo", "valor", "rango de precio");
+  let price = null, priceLevel = null;
+  if (/^\s*\$+\s*$/.test(priceRaw)) priceLevel = Math.min(priceRaw.trim().length, 4);
+  else if (priceRaw) price = parseMoney(norm(priceRaw), true);
+
   return {
     id: i,
     name,
@@ -303,8 +353,174 @@ function parseRow(row, i) {
     score: Number.isFinite(s) ? s : null,
     lat: hasPin ? lat : null,
     lng: hasPin ? lng : null,
+    price,
+    priceLevel,
+    styleN: norm(style),
+    nameN: norm(name),
     search: norm(`${name} ${style} ${location}`)
   };
+}
+
+// Convierte "80 mil", "80k", "80 lucas", "$80.000" o "80000" en pesos.
+// Con assumeMoney, un número suelto pequeño (p. ej. "80") se lee como miles.
+function parseMoney(t, assumeMoney) {
+  const m = t.match(/(\$\s*)?(\d{1,3}(?:\.\d{3})+|\d+(?:,\d+)?)\s*(mil\b|k\b|lucas?\b|pesos\b|cop\b)?/);
+  if (!m) return null;
+  let n = /\.\d{3}/.test(m[2]) ? Number(m[2].replace(/\./g, "")) : parseFloat(m[2].replace(",", "."));
+  if (/^(mil|k|luca)/.test(m[3] || "")) n *= 1000;
+  else if (n < 1000 && (assumeMoney || m[1] || m[3])) n *= 1000;
+  return Number.isFinite(n) && n > 0 ? Math.round(n) : null;
+}
+const fmtMoney = n => "$" + Math.round(n).toLocaleString("es-CO");
+
+// ===== Recomendador =====
+// Palabras que la persona puede escribir → tipos de comida de la hoja
+const CRAVINGS = [
+  { label: "japonesa", keys: ["sushi", "japon", "ramen", "maki", "nikkei"], tags: ["japonesa", "nikkon", "nikkei", "sushi"] },
+  { label: "asiática", keys: ["asiatic", "oriental", "wok", "thai", "tailandes"], tags: ["asiatica", "china", "coreana", "japonesa", "thai"] },
+  { label: "coreana", keys: ["corea"], tags: ["coreana"] },
+  { label: "china", keys: ["chin", "arroz chino", "chow"], tags: ["china", "asiatica"] },
+  { label: "pizza", keys: ["pizza"], tags: ["pizza", "pizzeria"] },
+  { label: "italiana", keys: ["pasta", "italian", "lasagna", "risotto"], tags: ["italiana", "pizzeria"] },
+  { label: "hamburguesa", keys: ["hamburgues", "burger", "burguer"], tags: ["hamburguesa", "americana"] },
+  { label: "carne", keys: ["carne", "asado", "parrilla", "steak", "res=", "costilla", "bbq", "barbecue", "churrasco", "picanha"], tags: ["parrillada", "steakhouse", "asadero", "llanera", "barbecue", "bbq"] },
+  { label: "pollo", keys: ["pollo", "alitas", "wings"], tags: ["pollo", "alitas"] },
+  { label: "mar", keys: ["mar=", "pescado", "marisco", "ceviche", "camaron", "pulpo"], tags: ["mar=", "pescaderia", "ceviche", "peruana"] },
+  { label: "mexicana", keys: ["mexic", "taco", "burrito", "nacho", "quesadilla"], tags: ["mexicana"] },
+  { label: "dulce", keys: ["dulce", "postre", "torta", "pastel", "helado", "chocolate", "waffle", "crepe"], tags: ["postre", "pasteleria", "heladeria", "panaderia", "chocolat"] },
+  { label: "café", keys: ["cafe", "tinto", "capuchino", "onces"], tags: ["cafe", "coffee", "panaderia"] },
+  { label: "desayuno", keys: ["desayun", "brunch", "huevos", "calentado"], tags: ["desayuno", "brunch"] },
+  { label: "árabe", keys: ["arabe", "shawarma", "falafel", "kebab"], tags: ["arabe"] },
+  { label: "india", keys: ["india", "hindu", "curry"], tags: ["hindu", "indio", "india"] },
+  { label: "peruana", keys: ["peru"], tags: ["peruana", "ceviche", "nikkon"] },
+  { label: "francesa", keys: ["frances", "francia"], tags: ["frances"] },
+  { label: "española", keys: ["espanol", "tapas", "paella"], tags: ["espanola", "catalana", "flamenco"] },
+  { label: "mediterránea", keys: ["mediterrane", "grieg"], tags: ["mediterranea"] },
+  { label: "colombiana", keys: ["colombian", "bandeja", "corrientazo", "ajiaco", "llaner", "tipic"], tags: ["colombiana", "llanera", "campestre", "asadero"] },
+  { label: "picar", keys: ["picar", "picada", "frito", "empanada", "pasabocas"], tags: ["picadas", "fritos", "bocatas", "alitas"] },
+  { label: "bar", keys: ["bar=", "cerveza", "trago", "coctel", "rumba", "karaoke"], tags: ["bar=", "gastro-bar", "karaoke", "flamenco"] },
+  { label: "saludable", keys: ["saludable", "sano", "ensalada", "bowl", "fit="], tags: ["bowl"] }
+];
+const STOP = new Set(("tengo ganas quiero comer algo rico rica bueno buena para somos personas persona pesos " +
+  "presupuesto hasta maximo unos unas como donde cerca esta este noche almuerzo cena comida lugar sitio " +
+  "restaurante gastar plata lucas especial cita aniversario celebrar barato barata economico economica " +
+  "pareja amigos familia mejor mejores").split(" "));
+const NUM_WORDS = { dos: 2, tres: 3, cuatro: 4, cinco: 5, seis: 6, siete: 7, ocho: 8, diez: 10 };
+const LEVEL_MIN = [0, 0, 35000, 70000, 150000]; // piso de cada nivel $, $$, $$$, $$$$
+const wordStart = (hay, w, exact) =>
+  new RegExp(`(^|[^a-z0-9])${w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}${exact ? "(?![a-z0-9])" : ""}`).test(hay);
+// Un término que termina en "=" debe ser palabra completa ("bar=" no casa con "barato")
+const hasTerm = (hay, k) => k.endsWith("=") ? wordStart(hay, k.slice(0, -1), true) : wordStart(hay, k);
+
+function understand(text) {
+  let t = norm(text).replace(/\b(dos|tres|cuatro|cinco|seis|siete|ocho|diez)\b/g, w => NUM_WORDS[w]);
+  const q = { cravings: [], words: [], city: null, budget: null, people: null, cheap: false, special: false };
+
+  // Personas: "para 4", "somos 3", "en pareja"
+  const pm = t.match(/(?:para|somos)\s+(\d{1,2})(?!\s*(?:mil|k\b|lucas?|pesos|\.\d{3}|\d))/);
+  if (pm) { q.people = Number(pm[1]); t = t.replace(pm[0], " "); }
+  else if (/\b(pareja|cita)\b/.test(t)) q.people = 2;
+
+  // Presupuesto: solo números con pinta de plata
+  const money = t.match(/(?:\$\s*\d[\d.,]*|\d[\d.,]*\s*(?:mil\b|k\b|lucas?\b|pesos\b|cop\b)|\d{1,3}(?:\.\d{3})+|\d{4,})/)
+    || t.match(/(?:presupuesto|hasta|maximo|gastar|tengo)\D{0,12}(\d+)/);
+  if (money) {
+    q.budget = parseMoney(money[0], true);
+    t = t.replace(money[0], " ");
+    const perPerson = /por persona|cada uno|c\/u|por cabeza/.test(t);
+    if (q.budget && q.people > 1 && !perPerson) { q.total = q.budget; q.budget = Math.round(q.budget / q.people); }
+  }
+  q.cheap = /\b(barat|economic|poca plata|sin gastar)/.test(t);
+  q.special = /\b(especial|aniversario|cita|celebr|cumple|romantic|elegante|lujo)/.test(t);
+
+  // Ciudad: la más larga que aparezca en el texto
+  const cities = [...new Set(state.all.map(r => norm(r.city)).filter(Boolean))].sort((a, b) => b.length - a.length);
+  q.city = cities.find(c => wordStart(t, c, true)) || null;
+  if (q.city) t = t.replace(q.city, " ");
+
+  for (const g of CRAVINGS) if (g.keys.some(k => hasTerm(t, k))) q.cravings.push(g);
+
+  // Palabras sueltas que coinciden con un tipo de comida o nombre de la hoja ("crepes", "Bruce")
+  const used = q.cravings.flatMap(g => g.keys.map(k => k.replace(/=$/, "")));
+  for (const w of t.split(/[^a-z0-9]+/)) {
+    if (w.length < 4 || STOP.has(w) || /^\d/.test(w) || used.some(k => w.startsWith(k))) continue;
+    if (state.all.some(r => wordStart(r.styleN, w) || wordStart(r.nameN, w))) q.words.push(w);
+  }
+  return q;
+}
+
+function mostCommonCity() {
+  const n = new Map();
+  for (const r of state.all) { const c = norm(r.city); if (c) n.set(c, (n.get(c) || 0) + 1); }
+  return [...n.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+}
+
+function fitsBudget(r, budget) {
+  if (r.price != null) return r.price <= budget * 1.1;
+  if (r.priceLevel != null) return LEVEL_MIN[r.priceLevel] <= budget;
+  return null; // sin dato
+}
+
+function recommend(text) {
+  const q = understand(text);
+  const hasPrice = state.all.some(r => r.price != null || r.priceLevel != null);
+  const chips = [], notes = [];
+  let rows = state.all.slice();
+
+  const tags = q.cravings.flatMap(g => g.tags);
+  if (tags.length || q.words.length) {
+    q.cravings.forEach(g => chips.push(cap(g.label)));
+    q.words.forEach(w => chips.push(`“${w}”`));
+    rows = rows.filter(r => tags.some(tg => hasTerm(r.styleN, tg)) || q.words.some(w => wordStart(r.styleN, w) || wordStart(r.nameN, w)));
+  }
+  if (q.city) {
+    const cityName = cap(state.all.find(r => norm(r.city).includes(q.city)).city);
+    chips.push(cityName);
+    const inCity = rows.filter(r => norm(r.city).includes(q.city));
+    if (inCity.length || !rows.length) rows = inCity;
+    else notes.push(`No tienes de eso en ${cityName}; estos son de otras ciudades.`);
+  }
+
+  let budget = q.budget;
+  if (!budget && q.cheap) budget = 35000;
+  if (q.people) chips.push(`${q.people} personas`);
+  if (budget) {
+    chips.push(q.total ? `${fmtMoney(q.total)} en total (${fmtMoney(budget)} c/u)` : `hasta ${fmtMoney(budget)} por persona`);
+    if (!hasPrice) {
+      notes.push("Tu hoja todavía no tiene precios, así que no pude filtrar por presupuesto. Agrega una columna «Precio» con el valor por persona (por ejemplo 60000) o con $, $$, $$$.");
+    } else {
+      const inBudget = rows.filter(r => fitsBudget(r, budget) !== false);
+      if (inBudget.length) rows = inBudget;
+      else if (rows.length) notes.push("Nada entra en ese presupuesto; estos son los más cercanos.");
+    }
+  }
+  if (q.special) {
+    chips.push("algo especial");
+    const top = rows.filter(r => (r.score ?? 0) >= 9);
+    if (top.length >= 3) rows = top;
+  }
+
+  const understood = chips.length > 0;
+  if (!understood) notes.push("No reconocí un antojo; te muestro los mejor puntuados. Prueba con un tipo de comida, un plato o una ciudad.");
+  if (understood && !rows.length) notes.push("No encontré nada con eso en tu hoja. Prueba con otro antojo o quita la ciudad.");
+
+  // Orden: primero los que tienen precio dentro del presupuesto; si no se nombró ciudad,
+  // primero la ciudad con más restaurantes; luego por puntaje, y los empates al azar
+  // para que pedir otra vez muestre opciones distintas
+  const home = q.city ? null : mostCommonCity();
+  const rnd = new Map(rows.map(r => [r.id, Math.random()]));
+  rows.sort((a, b) =>
+    (budget && hasPrice ? (fitsBudget(a, budget) === true ? 0 : 1) - (fitsBudget(b, budget) === true ? 0 : 1) : 0) ||
+    (home ? (norm(a.city) === home ? 0 : 1) - (norm(b.city) === home ? 0 : 1) : 0) ||
+    (b.score ?? -1) - (a.score ?? -1) || rnd.get(a.id) - rnd.get(b.id));
+
+  const why = r => {
+    if (r.price != null) return `~${fmtMoney(r.price)} por persona`;
+    if (r.priceLevel != null) return "$".repeat(r.priceLevel);
+    if (budget && hasPrice) return "Sin precio en la hoja";
+    return "";
+  };
+  return { text, chips, notes, rows: rows.slice(0, 6), why };
 }
 
 async function fetchCSV() {
@@ -333,6 +549,7 @@ async function load() {
     const headers = grid[h];
     const rows = grid.slice(h + 1).map(r => Object.fromEntries(headers.map((k, i) => [k || `col${i}`, r[i] ?? ""])));
     state.all = rows.map(parseRow).filter(Boolean);
+    if (state.reco) state.reco = recommend(state.reco.text);
     buildFilters();
     render(true);
     const time = new Date().toLocaleTimeString("es-CO", { hour: "numeric", minute: "2-digit" });
@@ -357,7 +574,8 @@ function updateStatus(shown) {
   const total = state.all.length;
   const n = shown ?? total;
   const noPin = state.all.filter(r => r.lat == null).length;
-  let txt = n === total ? `${total} restaurantes` : `${n} de ${total} restaurantes`;
+  let txt = state.reco ? `${n} recomendaciones de ${total} restaurantes`
+    : n === total ? `${total} restaurantes` : `${n} de ${total} restaurantes`;
   if (noPin) txt += `. ${noPin} sin coordenadas`;
   if (state.loadedAt) txt += `. Datos de las ${state.loadedAt}, <button type="button" onclick="load()">actualizar</button>`;
   setStatus(txt);
@@ -420,14 +638,35 @@ function popupHTML(r) {
   </div>`;
 }
 
+function recoHeader(reco) {
+  const head = document.createElement("div");
+  head.className = "reco-head";
+  head.innerHTML = `
+    <h2>Te recomiendo</h2>
+    ${reco.chips.length ? `<div class="chips">${reco.chips.map(c => `<span>${esc(c)}</span>`).join("")}</div>` : ""}
+    ${reco.notes.map(n => `<p class="note">${esc(n)}</p>`).join("")}
+    <button type="button" class="back">Ver todos los restaurantes</button>`;
+  head.querySelector(".back").addEventListener("click", () => {
+    state.reco = null;
+    document.getElementById("ask-q").value = "";
+    render(true);
+  });
+  return head;
+}
+
 function render(fit) {
-  const rows = filtered();
+  const rows = state.reco ? state.reco.rows : filtered();
   const list = document.getElementById("list");
   layer.clearLayers();
   markers.clear();
   list.innerHTML = "";
+  // En modo recomendación los filtros no aplican: se ocultan para dar espacio a los resultados
+  document.querySelector(".controls").hidden = !!state.reco;
+  document.querySelector(".examples").hidden = !!state.reco;
+  if (state.reco) list.appendChild(recoHeader(state.reco));
 
   if (!rows.length) {
+    if (state.reco) { updateStatus(0); return; }
     list.innerHTML = state.all.length
       ? `<div class="empty"><strong>Ningún restaurante coincide.</strong>Prueba otra combinación o pulsa «Quitar filtros».</div>`
       : `<div class="empty"><strong>La hoja está vacía.</strong>Agrega restaurantes en la hoja y pulsa actualizar.</div>`;
@@ -452,6 +691,7 @@ function render(fit) {
       <span>
         <p class="name">${esc(r.name)}</p>
         <p class="meta">${esc([r.style, r.location].filter(Boolean).join(", "))}</p>
+        ${state.reco && state.reco.why(r) ? `<p class="why">${esc(state.reco.why(r))}</p>` : ""}
         ${r.lat == null ? `<p class="nopin">Sin coordenadas en la hoja</p>` : ""}
       </span>`;
     b.addEventListener("click", () => {
@@ -480,16 +720,33 @@ function highlight(id, scroll) {
   if (scroll) document.querySelector(`.item[data-id="${id}"]`)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
 }
 
+function ask(text) {
+  if (!text.trim() || !state.all.length) return;
+  state.reco = recommend(text);
+  state.activeId = null;
+  render(true);
+  document.getElementById("list").scrollTop = 0;
+}
+document.getElementById("ask").addEventListener("submit", e => {
+  e.preventDefault();
+  ask(document.getElementById("ask-q").value);
+});
+document.querySelectorAll(".examples button").forEach(b => b.addEventListener("click", () => {
+  document.getElementById("ask-q").value = b.textContent;
+  ask(b.textContent);
+}));
+
+// Tocar la búsqueda o un filtro sale del modo recomendación
 let t;
 document.getElementById("q").addEventListener("input", e => {
   clearTimeout(t);
-  t = setTimeout(() => { state.q = e.target.value; syncFilterUI(); render(true); }, 150);
+  t = setTimeout(() => { state.q = e.target.value; state.reco = null; syncFilterUI(); render(true); }, 150);
 });
 for (const [id, key] of [["f-city", "city"], ["f-style", "style"], ["f-score", "score"]]) {
-  document.getElementById(id).addEventListener("change", e => { state[key] = e.target.value; syncFilterUI(); render(true); });
+  document.getElementById(id).addEventListener("change", e => { state[key] = e.target.value; state.reco = null; syncFilterUI(); render(true); });
 }
 document.getElementById("clear").addEventListener("click", () => {
-  Object.assign(state, { city: "", style: "", score: "", q: "" });
+  Object.assign(state, { city: "", style: "", score: "", q: "", reco: null });
   document.getElementById("q").value = "";
   ["f-city", "f-style", "f-score"].forEach(id => (document.getElementById(id).value = ""));
   syncFilterUI();
