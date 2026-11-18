@@ -3,6 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#E6E8EE" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0E1016" media="(prefers-color-scheme: dark)">
 <title>Mis restaurantes</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.css">
@@ -11,226 +13,458 @@
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <style>
+  /* ===== Colores y medidas ===== */
   :root {
-    --bg: #F3F5F2;
-    --panel: #FFFFFF;
-    --ink: #1C2420;
-    --muted: #5F6B65;
-    --line: #DCE2DD;
-    --chip: #E7ECE8;
-    --accent: #1E6B47;
-    --s-top: #1E6B47;
-    --s-good: #5E9634;
-    --s-mid: #D39A1C;
-    --s-low: #9A6A5E;
-    --s-none: #9AA39E;
+    --page: #E6E8EE;
+    --surface: #FCFCFE;
+    --glass: rgba(252, 252, 254, 0.88);
+    --glass-edge: rgba(255, 255, 255, 0.75);
+    --ink: #161A26;
+    --muted: #5E6577;
+    --faint: #9096A6;
+    --line: rgba(22, 26, 38, 0.09);
+    --fill: rgba(22, 26, 38, 0.055);
+    --fill-strong: rgba(22, 26, 38, 0.1);
+    --accent: #1D3BD1;
+    --accent-ink: #FFFFFF;
+    --accent-soft: rgba(29, 59, 209, 0.1);
+    --track: rgba(22, 26, 38, 0.1);
+    --hero: #1D3BD1;
+    --hero-ink: #FFFFFF;
+    --hero-muted: rgba(255, 255, 255, 0.74);
+    --hero-chip: rgba(255, 255, 255, 0.16);
+    --hero-chip-hover: rgba(255, 255, 255, 0.26);
+    --hero-field: #FFFFFF;
+    --hero-field-ink: #161A26;
+    --hero-go: #1D3BD1;
+    --hero-go-ink: #FFFFFF;
+    --s-top: #1D3BD1;
+    --s-good: #4A67DA;
+    --s-mid: #D9A03B;
+    --s-low: #737786;
+    --s-none: #B0B4C0;
+    /* Pines: el mapa siempre es claro, así que no cambian en modo oscuro */
+    --p-top: #1D3BD1;
+    --p-good: #4A67DA;
+    --p-mid: #D9A03B;
+    --p-low: #737786;
+    --p-none: #B0B4C0;
+    --cluster-bg: #FFFFFF;
+    --cluster-ink: #161A26;
+    --cluster-halo: rgba(29, 59, 209, 0.16);
+    --shadow: 0 1px 2px rgba(14, 18, 32, 0.06), 0 14px 36px -10px rgba(14, 18, 32, 0.3);
+    --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
     color-scheme: light;
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --bg: #141916;
-      --panel: #1B221E;
-      --ink: #E8EDE9;
-      --muted: #9DA9A2;
-      --line: #2C3631;
-      --chip: #26302B;
-      --accent: #5CC08C;
-      --s-top: #3FA873;
-      --s-good: #7DB54F;
-      --s-mid: #E0AD3A;
-      --s-low: #B98576;
-      --s-none: #6E7872;
+      --page: #E6E8EE; /* el mapa siempre es claro */
+      --surface: #1A1D27;
+      --glass: rgba(24, 27, 37, 0.86);
+      --glass-edge: rgba(255, 255, 255, 0.08);
+      --ink: #EEF0F6;
+      --muted: #A6ACBC;
+      --faint: #7A8092;
+      --line: rgba(238, 240, 246, 0.09);
+      --fill: rgba(238, 240, 246, 0.06);
+      --fill-strong: rgba(238, 240, 246, 0.11);
+      --accent: #7D97FF;
+      --accent-ink: #0A1240;
+      --accent-soft: rgba(125, 151, 255, 0.15);
+      --track: rgba(238, 240, 246, 0.12);
+      --hero: #1A30B4;
+      --hero-ink: #FFFFFF;
+      --hero-muted: rgba(255, 255, 255, 0.7);
+      --hero-chip: rgba(255, 255, 255, 0.12);
+      --hero-chip-hover: rgba(255, 255, 255, 0.2);
+      --hero-field: #FFFFFF;
+      --hero-field-ink: #161A26;
+      --hero-go: #1A30B4;
+      --hero-go-ink: #FFFFFF;
+      --s-top: #6F8BFF;
+      --s-good: #5A6FC8;
+      --s-mid: #E2B03F;
+      --s-low: #6F7280;
+      --s-none: #555966;
+      --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 18px 44px -12px rgba(0, 0, 0, 0.65);
       color-scheme: dark;
     }
   }
+  /* Permite animar el relleno del anillo de puntaje */
+  @property --p { syntax: "<percentage>"; inherits: true; initial-value: 0%; }
+
   * { box-sizing: border-box; }
-  html, body { height: 100%; margin: 0; }
+  html, body { height: 100%; margin: 0; overflow: hidden; }
   body {
-    background: var(--bg);
+    background: var(--page);
     color: var(--ink);
     font-family: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
     font-size: 15px;
-    line-height: 1.4;
+    line-height: 1.45;
+    font-optical-sizing: auto;
+    -webkit-font-smoothing: antialiased;
   }
-  #app { display: flex; height: 100%; }
+  button { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  #map { position: fixed; inset: 0; background: var(--page); }
+
+  /* ===== Panel flotante ===== */
   #panel {
-    width: 400px; flex-shrink: 0;
+    position: fixed; z-index: 1100;
+    top: 16px; left: 16px; bottom: 16px; width: 400px;
     display: flex; flex-direction: column;
-    background: var(--panel);
-    border-right: 1px solid var(--line);
-    min-height: 0;
+    background: var(--glass);
+    -webkit-backdrop-filter: blur(24px) saturate(160%);
+    backdrop-filter: blur(24px) saturate(160%);
+    border: 1px solid var(--glass-edge);
+    border-radius: 22px;
+    box-shadow: var(--shadow);
+    overflow: hidden;
   }
-  #map { flex: 1; min-height: 0; background: var(--bg); }
+  .grab { display: none; }
 
-  header { padding: 22px 20px 14px; }
-  h1 { margin: 0; font-size: 2rem; font-weight: 800; letter-spacing: -0.02em; line-height: 1.05; }
-  #status { margin: 6px 0 0; color: var(--muted); font-size: 0.9rem; }
-  #status button {
-    font: inherit; color: var(--accent); background: none; border: 0; padding: 0;
-    text-decoration: underline; cursor: pointer;
+  /* ===== Bloque principal: ¿Qué se te antoja? ===== */
+  .hero { background: var(--hero); color: var(--hero-ink); }
+  .hero :focus-visible { outline-color: var(--hero-ink); }
+  header {
+    padding: 16px 16px 0 22px;
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
   }
+  h1 { margin: 0; font-size: 0.98rem; font-weight: 800; letter-spacing: -0.01em; line-height: 1.2; }
+  #status { margin: 1px 0 0; color: var(--hero-muted); font-size: 0.8rem; }
+  #refresh {
+    flex: none; width: 36px; height: 36px;
+    display: grid; place-items: center; border: 0; border-radius: 50%;
+    background: none; color: var(--hero-muted); cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+  }
+  #refresh:hover { background: var(--hero-chip); color: var(--hero-ink); }
+  #refresh.spin svg { animation: spin 0.9s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
 
-  .ask { padding: 0 20px 14px; display: grid; gap: 7px; }
-  .ask label { font-weight: 600; font-size: 0.95rem; }
+  .ask { padding: 18px 22px 20px; }
+  .ask label {
+    display: block; margin-bottom: 16px;
+    font-size: 2.15rem; font-weight: 800; line-height: 1; letter-spacing: -0.04em;
+    font-variation-settings: "opsz" 96; text-wrap: balance;
+  }
+  .ask-field {
+    display: flex; align-items: center;
+    background: var(--hero-field); border-radius: 999px;
+    box-shadow: 0 8px 24px -8px rgba(0, 0, 0, 0.45);
+    transition: box-shadow 0.2s;
+  }
+  .ask-field:focus-within { box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.28), 0 8px 24px -8px rgba(0, 0, 0, 0.45); }
   .ask input {
-    flex: 1; min-width: 0; font: inherit; color: var(--ink); background: var(--bg);
-    border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px;
+    flex: 1; min-width: 0; border: 0; background: none; outline: none;
+    font: inherit; font-size: 16.5px; color: var(--hero-field-ink);
+    padding: 15px 6px 15px 20px;
   }
-  .ask button[type=submit] {
-    font: inherit; font-weight: 600; white-space: nowrap; cursor: pointer;
-    background: var(--accent); color: var(--panel); border: 0; border-radius: 10px; padding: 9px 14px;
+  .ask input::placeholder { color: var(--faint); }
+  .go {
+    flex: none; width: 44px; height: 44px; margin: 5px;
+    display: grid; place-items: center; cursor: pointer;
+    border: 0; border-radius: 50%; background: var(--hero-go); color: var(--hero-go-ink);
+    transition: transform 0.1s ease-out, filter 0.15s;
   }
-  .examples { display: flex; flex-wrap: wrap; gap: 6px; }
+  .go:hover { filter: brightness(1.12); }
+  .go:active { transform: scale(0.92); }
+  .examples {
+    display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none;
+    margin: 0 -22px; padding: 12px 22px 0;
+    -webkit-mask-image: linear-gradient(90deg, transparent, #000 22px, #000 calc(100% - 22px), transparent);
+    mask-image: linear-gradient(90deg, transparent, #000 22px, #000 calc(100% - 22px), transparent);
+  }
+  .examples::-webkit-scrollbar { display: none; }
   .examples button {
-    font: inherit; font-size: 0.8rem; cursor: pointer; color: var(--ink);
-    background: var(--chip); border: 0; border-radius: 999px; padding: 4px 10px;
+    flex: none; cursor: pointer; font-size: 0.84rem; color: var(--hero-ink);
+    background: var(--hero-chip); border: 0; border-radius: 999px; padding: 7px 13px;
+    transition: background 0.15s, transform 0.1s ease-out;
   }
-  .examples button:hover { background: var(--line); }
+  .examples button:hover { background: var(--hero-chip-hover); }
+  .examples button:active { transform: scale(0.95); }
 
-  .reco-head { padding: 14px 20px; border-bottom: 1px solid var(--line); display: grid; gap: 8px; }
-  .reco-head h2 { margin: 0; font-size: 1.1rem; font-weight: 800; }
-  .reco-head .back {
-    justify-self: start; font: inherit; font-size: 0.88rem; cursor: pointer;
-    color: var(--accent); background: none; border: 0; padding: 0; text-decoration: underline;
+  /* ===== Buscar y filtrar ===== */
+  .tools { padding: 14px 22px 12px; display: grid; gap: 10px; }
+  .tools[hidden], .examples[hidden] { display: none; }
+  .tools .row { display: flex; gap: 8px; }
+  .search { position: relative; flex: 1; min-width: 0; }
+  .search svg { position: absolute; left: 11px; top: 50%; translate: 0 -50%; color: var(--faint); pointer-events: none; }
+  input[type=search] {
+    width: 100%; font: inherit; color: var(--ink);
+    background: var(--fill); border: 1px solid transparent; border-radius: 12px;
+    padding: 9px 12px 9px 34px; outline: none;
+    transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
   }
-  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
-  .chips span { font-size: 0.8rem; background: var(--chip); border-radius: 999px; padding: 3px 10px; }
-  .note { margin: 0; font-size: 0.85rem; color: var(--muted); }
-  .why { margin: 3px 0 0; font-size: 0.82rem; color: var(--accent); font-weight: 600; }
-
-  .controls { padding: 0 20px 12px; display: grid; gap: 10px; }
-  .controls[hidden], .examples[hidden] { display: none; }
-  .row { display: flex; gap: 8px; }
-  input[type=search], select {
-    font: inherit; color: var(--ink); background: var(--bg);
-    border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px;
+  input[type=search]:focus { background: var(--surface); border-color: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); }
+  #toggle-filters {
+    display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+    background: var(--fill); border: 0; border-radius: 12px; padding: 0 12px; font-size: 0.9rem;
+    transition: background 0.15s;
   }
-  input[type=search] { flex: 1; min-width: 0; }
-  input:focus-visible, select:focus-visible, button:focus-visible {
-    outline: 2px solid var(--accent); outline-offset: 2px;
+  #toggle-filters:hover, #toggle-filters[aria-expanded=true] { background: var(--fill-strong); }
+  .badge {
+    min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px;
+    display: inline-grid; place-items: center;
+    background: var(--accent); color: var(--accent-ink); font-size: 0.72rem; font-weight: 800;
   }
-  .filters { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-  .filters label { display: grid; gap: 3px; font-size: 0.8rem; color: var(--muted); min-width: 0; }
-  .filters select { width: 100%; min-width: 0; }
-  .filters select.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+  .badge[hidden] { display: none; }
+  .filters-wrap { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 0.32s var(--ease-out); }
+  .filters-wrap.open { grid-template-rows: 1fr; }
+  .filters-wrap > div { overflow: hidden; min-height: 0; }
+  .filters { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 8px; padding: 4px 0 2px; }
+  .filters label { display: grid; gap: 4px; font-size: 0.78rem; color: var(--muted); min-width: 0; }
+  select {
+    -webkit-appearance: none; appearance: none; width: 100%; min-width: 0;
+    font: inherit; font-size: 0.9rem; color: var(--ink);
+    background: var(--fill) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239096A6' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 10px center;
+    border: 1px solid transparent; border-radius: 10px; padding: 8px 28px 8px 10px; cursor: pointer;
+  }
+  select.on { border-color: var(--accent); background-color: var(--accent-soft); }
   #clear {
-    justify-self: start; font: inherit; font-size: 0.88rem; cursor: pointer;
-    color: var(--accent); background: none; border: 0; padding: 0; text-decoration: underline;
+    justify-self: start; cursor: pointer; font-size: 0.86rem; font-weight: 600;
+    color: var(--accent); background: none; border: 0; padding: 2px 0;
   }
 
-  #list { flex: 1; overflow-y: auto; border-top: 1px solid var(--line); min-height: 0; }
+  /* ===== Lista ===== */
+  #list {
+    flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+    border-top: 1px solid var(--line); padding: 6px 10px 14px;
+  }
   .item {
-    display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 12px; align-items: center;
-    width: 100%; text-align: left; font: inherit; color: inherit;
-    background: none; border: 0; border-bottom: 1px solid var(--line);
-    padding: 12px 20px; cursor: pointer;
+    display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: 14px; align-items: center;
+    width: 100%; text-align: left; cursor: pointer;
+    background: none; border: 0; border-radius: 14px; padding: 9px 12px;
+    transition: background 0.15s;
   }
-  .item:hover { background: var(--bg); }
-  .item.active { background: var(--chip); }
-  .score {
-    width: 52px; height: 52px; border-radius: 50%;
+  .item:hover { background: var(--fill); }
+  .item.active { background: var(--accent-soft); }
+  .txt { min-width: 0; }
+  .name, .meta, .why, .nopin { display: block; }
+  .name {
+    font-weight: 600; font-size: 1rem; letter-spacing: -0.01em;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .meta { margin-top: 1px; color: var(--muted); font-size: 0.85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .why { margin-top: 3px; font-size: 0.8rem; font-weight: 600; color: var(--accent); }
+  .nopin { margin-top: 3px; font-size: 0.78rem; color: var(--s-low); }
+
+  /* Anillo de puntaje: el arco se llena según la nota sobre 10 */
+  .ring {
+    position: relative; width: 48px; height: 48px;
     display: grid; place-items: center;
-    font-size: 1.25rem; font-weight: 800; color: #fff; letter-spacing: -0.02em;
+    font-weight: 800; font-size: 1.02rem; letter-spacing: -0.03em; font-variant-numeric: tabular-nums;
   }
-  .name { font-weight: 600; font-size: 1.02rem; margin: 0; }
-  .meta { margin: 2px 0 0; color: var(--muted); font-size: 0.88rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .nopin { margin: 3px 0 0; font-size: 0.8rem; color: var(--s-low); }
-  .empty { padding: 28px 20px; color: var(--muted); }
+  .ring::before {
+    content: ""; position: absolute; inset: 0; border-radius: 50%;
+    background: conic-gradient(var(--c) var(--p), var(--track) 0);
+    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 3.5px));
+    mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 3.5px));
+  }
+  .enter { animation: rise 0.45s var(--ease-out) both; animation-delay: var(--d, 0ms); }
+  .enter .ring { animation: ring-fill 0.9s var(--ease-out) both; animation-delay: calc(var(--d, 0ms) + 80ms); }
+  @keyframes rise { from { opacity: 0; transform: translateY(10px); } }
+  @keyframes ring-fill { from { --p: 0%; } }
+
+  .reco-head { padding: 12px 12px 14px; margin-bottom: 4px; display: grid; gap: 10px; border-bottom: 1px solid var(--line); }
+  .reco-head h2 { margin: 0; font-size: 1.25rem; font-weight: 800; letter-spacing: -0.025em; line-height: 1.1; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chips span {
+    font-size: 0.8rem; font-weight: 600; color: var(--accent);
+    background: var(--accent-soft); border-radius: 999px; padding: 4px 10px;
+    animation: chip-in 0.35s var(--ease-out) both; animation-delay: var(--d, 0ms);
+  }
+  @keyframes chip-in { from { opacity: 0; transform: scale(0.85); } }
+  .note { margin: 0; font-size: 0.85rem; color: var(--muted); line-height: 1.4; }
+  .back {
+    justify-self: start; cursor: pointer; font-size: 0.86rem; font-weight: 600;
+    background: var(--fill); border: 0; border-radius: 999px; padding: 6px 12px;
+    transition: background 0.15s;
+  }
+  .back:hover { background: var(--fill-strong); }
+
+  .empty { padding: 28px 12px; color: var(--muted); }
   .empty strong { color: var(--ink); display: block; margin-bottom: 4px; }
   .empty button {
-    margin-top: 12px; font: inherit; cursor: pointer;
-    background: var(--ink); color: var(--panel); border: 0; border-radius: 10px; padding: 8px 14px;
+    margin-top: 12px; cursor: pointer; font-weight: 600;
+    background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 999px; padding: 8px 16px;
   }
+  .sk {
+    height: 58px; margin: 6px 2px; border-radius: 14px;
+    background: linear-gradient(90deg, var(--fill) 25%, var(--fill-strong) 50%, var(--fill) 75%);
+    background-size: 200% 100%; animation: shimmer 1.3s linear infinite;
+  }
+  @keyframes shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
 
-  .leaflet-popup-content-wrapper, .leaflet-popup-tip { background: var(--panel); color: var(--ink); }
-  .leaflet-popup-content { font-family: inherit; margin: 12px 14px; }
-  .pop h3 { margin: 0 0 4px; font-size: 1.05rem; }
-  .pop p { margin: 0 0 3px; color: var(--muted); font-size: 0.88rem; }
-  .pop a { color: var(--accent); font-weight: 600; }
-
-  /* Pines con el puntaje y grupos de pines */
+  /* ===== Mapa: pines, grupos, controles y fichas ===== */
   .pin, .cluster { background: none; border: 0; }
   .pin span, .cluster span {
-    display: grid; place-items: center; width: 100%; height: 100%;
-    border-radius: 50%; font-family: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+    display: grid; place-items: center; width: 100%; height: 100%; border-radius: 50%;
+    font-family: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
     font-weight: 800; line-height: 1; letter-spacing: -0.02em;
   }
   .pin span {
-    color: #fff; font-size: 12px; border: 2px solid #fff;
+    font-size: 12px; border: 2px solid #fff;
     box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+    transition: transform 0.25s var(--ease-out), box-shadow 0.25s;
   }
   .cluster span {
-    /* El mapa base siempre es claro, así que el grupo va oscuro en ambos temas */
-    background: #1C2420; color: #fff; font-size: 13px;
-    box-shadow: 0 0 0 5px rgba(28, 36, 32, 0.22);
+    background: var(--cluster-bg); color: var(--cluster-ink); font-size: 13px;
+    box-shadow: 0 0 0 5px var(--cluster-halo), 0 2px 8px rgba(14, 18, 32, 0.18);
+    transition: transform 0.25s var(--ease-out);
+  }
+  .lift span { transform: scale(1.3); box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35); }
+
+  .leaflet-container { font-family: inherit; }
+  .leaflet-control-zoom.leaflet-bar { border: 0; border-radius: 14px; overflow: hidden; box-shadow: var(--shadow); }
+  .leaflet-control-zoom.leaflet-bar a {
+    width: 38px; height: 38px; line-height: 38px; color: var(--ink);
+    background: var(--glass); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
+    border-bottom-color: var(--line);
+  }
+  .leaflet-control-zoom.leaflet-bar a:hover { background: var(--surface); }
+  .leaflet-control-attribution.leaflet-control { background: var(--glass); color: var(--muted); border-radius: 8px 0 0 0; }
+  .leaflet-control-attribution a { color: var(--muted); }
+
+  .leaflet-popup-content-wrapper {
+    background: var(--surface); color: var(--ink); border-radius: 18px; box-shadow: var(--shadow);
+    animation: pop-in 0.24s var(--ease-out) both; transform-origin: 50% 100%;
+  }
+  @keyframes pop-in { from { opacity: 0; transform: translateY(6px) scale(0.96); } }
+  .leaflet-popup-tip { background: var(--surface); }
+  .leaflet-popup-content { margin: 16px 18px; font-size: 15px; line-height: 1.4; }
+  .leaflet-container a.leaflet-popup-close-button { top: 8px; right: 8px; color: var(--faint); }
+  .pop { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 12px; align-items: center; padding-right: 10px; }
+  .pop .ring { width: 44px; height: 44px; font-size: 0.95rem; color: var(--ink); }
+  .pop h3 { margin: 0; font-size: 1.05rem; font-weight: 800; letter-spacing: -0.02em; line-height: 1.15; }
+  .pop p { margin: 2px 0 0; color: var(--muted); font-size: 0.85rem; }
+  .pop .dir {
+    grid-column: 1 / -1; margin-top: 4px; text-align: center; text-decoration: none;
+    background: var(--accent); color: var(--accent-ink); font-weight: 600; font-size: 0.9rem;
+    border-radius: 999px; padding: 9px 14px; transition: filter 0.15s;
+  }
+  .pop .dir:hover { filter: brightness(1.08); }
+
+  /* ===== Móvil: el panel es una hoja que se arrastra desde abajo ===== */
+  @media (max-width: 760px) {
+    #panel {
+      top: auto; left: 0; right: 0; bottom: 0; width: auto;
+      height: calc(100dvh - 52px);
+      border-radius: 24px 24px 0 0; border-bottom: 0;
+      will-change: transform;
+    }
+    /* Se arrastra desde el asa, el título o la pregunta */
+    .sheet-top, .ask label { touch-action: none; cursor: grab; user-select: none; -webkit-user-select: none; }
+    .grab { display: block; padding: 8px 0 2px; }
+    .grab::before {
+      content: ""; display: block; width: 38px; height: 5px; margin: 0 auto;
+      border-radius: 999px; background: var(--hero-ink); opacity: 0.4;
+    }
+    header { padding: 2px 12px 0 18px; }
+    .ask { padding: 12px 18px 16px; }
+    .ask label { font-size: 1.8rem; margin-bottom: 12px; }
+    .examples { margin: 0 -18px; padding: 10px 18px 0; }
+    .tools { padding: 12px 18px 10px; }
+    input[type=search], select { font-size: 16px; }
+    #list { padding: 4px 8px 16px; }
+    .leaflet-control-zoom { display: none; }
+    .leaflet-bottom.leaflet-right { top: 0; bottom: auto; }
+    .leaflet-control-attribution.leaflet-control { border-radius: 0 0 0 8px; }
   }
 
-  @media (max-width: 760px) {
-    #app { flex-direction: column; }
-    #map { flex: 0 0 42vh; flex: 0 0 42dvh; }
-    #panel { width: 100%; flex: 1; border-right: 0; border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom, 0px); }
-    header { padding: 14px 16px 10px; }
-    h1 { font-size: 1.5rem; }
-    .ask { padding: 0 16px 12px; }
-    .reco-head { padding: 12px 16px; }
-    .controls { padding: 0 16px 10px; }
-    .item { padding: 10px 16px; }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important; animation-delay: 0ms !important;
+      animation-iteration-count: 1 !important; transition-duration: 0.01ms !important;
+    }
+  }
+  @media (prefers-reduced-transparency: reduce) {
+    #panel, .leaflet-control-zoom.leaflet-bar a { background: var(--surface); -webkit-backdrop-filter: none; backdrop-filter: none; }
   }
 </style>
 </head>
 <body>
-<div id="app">
-  <aside id="panel">
+<div id="map" role="region" aria-label="Mapa de restaurantes"></div>
+
+<aside id="panel" aria-label="Restaurantes">
+  <div class="hero">
+  <div class="sheet-top">
+    <div class="grab" aria-hidden="true"></div>
     <header>
-      <h1>Mis restaurantes</h1>
-      <p id="status">Cargando la hoja…</p>
+      <div>
+        <h1>Mis restaurantes</h1>
+        <p id="status">Cargando la hoja…</p>
+      </div>
+      <button type="button" id="refresh" aria-label="Actualizar datos de la hoja" title="Actualizar">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+      </button>
     </header>
-    <form id="ask" class="ask" autocomplete="off">
-      <label for="ask-q">¿Qué se te antoja?</label>
-      <div class="row">
-        <input type="text" id="ask-q" placeholder="Ej: sushi, presupuesto de 80 mil">
-        <button type="submit">Recomiéndame</button>
-      </div>
-      <div class="examples" aria-label="Ejemplos">
-        <button type="button">Sushi hasta 80 mil</button>
-        <button type="button">Algo dulce en Bogotá</button>
-        <button type="button">Carne para 4 con 300 mil</button>
-        <button type="button">Algo especial para una cita</button>
-      </div>
-    </form>
-    <div class="controls">
-      <input type="search" id="q" placeholder="Busca por nombre o dirección" aria-label="Buscar restaurantes">
-      <div class="filters">
-        <label>Ciudad
-          <select id="f-city"><option value="">Todas</option></select>
-        </label>
-        <label>Tipo de comida
-          <select id="f-style"><option value="">Todos</option></select>
-        </label>
-        <label>Puntaje
-          <select id="f-score">
-            <option value="">Cualquiera</option>
-            <option value="10">Solo 10</option>
-            <option value="9">9 o más</option>
-            <option value="8">8 o más</option>
-            <option value="7">7 o más</option>
-            <option value="-7">Menos de 7</option>
-          </select>
-        </label>
-        <label>Ordenar por
-          <select id="sort">
-            <option value="score">Mejor puntaje</option>
-            <option value="name">Nombre A–Z</option>
-            <option value="city">Ciudad</option>
-          </select>
-        </label>
-      </div>
-      <button type="button" id="clear" hidden>Quitar filtros</button>
+  </div>
+
+  <form id="ask" class="ask" autocomplete="off">
+    <label for="ask-q">¿Qué se te antoja?</label>
+    <div class="ask-field">
+      <input type="text" id="ask-q" placeholder="Ej: sushi, presupuesto de 80 mil" enterkeyhint="search">
+      <button type="submit" class="go" aria-label="Recomiéndame">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></svg>
+      </button>
     </div>
-    <div id="list" aria-live="polite"></div>
-  </aside>
-  <div id="map" role="region" aria-label="Mapa de restaurantes"></div>
-</div>
+    <div class="examples" aria-label="Ejemplos">
+      <button type="button">Sushi hasta 80 mil</button>
+      <button type="button">Algo dulce en Bogotá</button>
+      <button type="button">Carne para 4 con 300 mil</button>
+      <button type="button">Algo especial para una cita</button>
+      <button type="button">Pizza barata</button>
+    </div>
+  </form>
+  </div>
+
+  <div class="tools">
+    <div class="row">
+      <label class="search">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input type="search" id="q" placeholder="Busca por nombre o dirección" aria-label="Buscar restaurantes">
+      </label>
+      <button type="button" id="toggle-filters" aria-expanded="false" aria-controls="filters">
+        Filtros <span class="badge" id="filter-count" hidden></span>
+      </button>
+    </div>
+    <div class="filters-wrap" id="filters">
+      <div>
+        <div class="filters">
+          <label>Ciudad
+            <select id="f-city"><option value="">Todas</option></select>
+          </label>
+          <label>Tipo de comida
+            <select id="f-style"><option value="">Todos</option></select>
+          </label>
+          <label>Puntaje
+            <select id="f-score">
+              <option value="">Cualquiera</option>
+              <option value="10">Solo 10</option>
+              <option value="9">9 o más</option>
+              <option value="8">8 o más</option>
+              <option value="7">7 o más</option>
+              <option value="-7">Menos de 7</option>
+            </select>
+          </label>
+          <label>Ordenar por
+            <select id="sort">
+              <option value="score">Mejor puntaje</option>
+              <option value="name">Nombre A–Z</option>
+              <option value="city">Ciudad</option>
+            </select>
+          </label>
+        </div>
+      </div>
+    </div>
+    <button type="button" id="clear" hidden>Quitar filtros</button>
+  </div>
+
+  <div id="list" aria-live="polite">
+    <div class="sk"></div><div class="sk"></div><div class="sk"></div><div class="sk"></div><div class="sk"></div>
+  </div>
+</aside>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.js"></script>
@@ -240,11 +474,15 @@
 const SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vStf526UD4ugy9VWSJdkMZRFndOHLKgRnyJHVYH8fv8v4--9QBx6bifwtFIsZmycvege-2WdaR6OV1I/pub?output=csv";
 const PROXY = url => "https://api.allorigins.win/raw?url=" + encodeURIComponent(url);
 const START_VIEW = [4.665, -74.06]; // Bogotá
+// CARTO exige clave para sus mapas base
+const CARTO_KEY = "cb1_4na0_1_97ca5fd991ca6b67f507fe2e";
 
 // ===== Utilidades =====
-const norm = s => (s ?? "").toString().normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+const norm = s => (s ?? "").toString().normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const nums = s => ((s ?? "").toString().match(/-?\d+(?:[.,]\d+)?/g) || []).map(n => parseFloat(n.replace(",", ".")));
+const isSheet = () => matchMedia("(max-width: 760px)").matches;
+const reducedMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 // Lee una columna sin importar mayúsculas ni tildes en el encabezado
 function col(row, ...names) {
@@ -254,24 +492,31 @@ function col(row, ...names) {
   return "";
 }
 
-function tier(score) {
-  if (score == null) return "var(--s-none)";
-  if (score >= 9) return "var(--s-top)";
-  if (score >= 8) return "var(--s-good)";
-  if (score >= 7) return "var(--s-mid)";
-  return "var(--s-low)";
+function tier(score, set = "s") {
+  if (score == null) return `var(--${set}-none)`;
+  if (score >= 9) return `var(--${set}-top)`;
+  if (score >= 8) return `var(--${set}-good)`;
+  if (score >= 7) return `var(--${set}-mid)`;
+  return `var(--${set}-low)`;
 }
+// Texto oscuro sobre el amarillo para que se lea bien
+const tierInk = score => (score != null && score >= 7 && score < 8) ? "#2A1F05" : "#fff";
 function fmtScore(score) {
   if (score == null) return "–";
   return Number.isInteger(score) ? String(score) : score.toFixed(1).replace(".", ",");
 }
+const ringHTML = r =>
+  `<span class="ring" style="--c:${tier(r.score)};--p:${r.score == null ? 0 : Math.min(r.score, 10) * 10}%">${fmtScore(r.score)}</span>`;
 
 // ===== Mapa =====
-// CARTO exige clave para sus mapas base
-const CARTO_KEY = "cb1_4na0_1_97ca5fd991ca6b67f507fe2e";
-const map = L.map("map", { zoomControl: true }).setView(START_VIEW, 12);
-L.tileLayer(`https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png?key=${CARTO_KEY}`, {
+// Mapa claro y sobrio (estilo Positron de CARTO), igual en modo claro y oscuro
+const tileURL = () => `https://basemaps.cartocdn.com/rastertiles/light_all/{z}/{x}/{y}{r}.png?key=${CARTO_KEY}`;
+const map = L.map("map", { zoomControl: false }).setView(START_VIEW, 12);
+L.control.zoom({ position: "topright" }).addTo(map);
+const tiles = L.tileLayer(tileURL(), {
   maxZoom: 19,
+  maxNativeZoom: 18, // más cerca que 18 CARTO no tiene detalle: se amplía la imagen
+
   attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
 }).addTo(map);
 // Si el contenedor cambia de tamaño (girar el móvil, etc.), el mapa se recalcula
@@ -291,10 +536,16 @@ const layer = L.markerClusterGroup({
 
 const pinIcon = r => L.divIcon({
   className: "pin",
-  html: `<span style="background:${tier(r.score)}">${fmtScore(r.score)}</span>`,
+  html: `<span style="background:${tier(r.score, "p")};color:${tierInk(r.score)}">${fmtScore(r.score)}</span>`,
   iconSize: [32, 32],
   popupAnchor: [0, -14]
 });
+
+// Parte del mapa que tapa el panel, para encuadrar en la zona que sí se ve
+function covered() {
+  if (isSheet()) return { left: 0, bottom: sheet.visible() };
+  return { left: document.getElementById("panel").getBoundingClientRect().right, bottom: 0 };
+}
 
 // Encuadra la zona con más restaurantes (radio de 25 km) en lugar del mundo entero
 function fitView(rows) {
@@ -309,7 +560,20 @@ function fitView(rows) {
     }
     if (best.length > 1) group = best;
   }
-  map.fitBounds(L.latLngBounds(group), { padding: [40, 40], maxZoom: 15 });
+  const c = covered();
+  map.flyToBounds(L.latLngBounds(group), {
+    paddingTopLeft: [c.left + 40, 50],
+    paddingBottomRight: [50, c.bottom + 40],
+    maxZoom: 15,
+    duration: reducedMotion() ? 0 : 0.8
+  });
+}
+
+// Centra un punto en la parte visible del mapa
+function centerOn(latlng, zoom) {
+  const c = covered();
+  const p = map.project(latlng, zoom).add([-c.left / 2, c.bottom / 2]);
+  map.flyTo(map.unproject(p, zoom), zoom, { duration: reducedMotion() ? 0 : 0.7 });
 }
 
 // ===== Estado =====
@@ -562,23 +826,23 @@ async function load() {
       <div class="empty">
         <strong>No se pudo leer la hoja de Google.</strong>
         Revisa que siga publicada en la web como CSV y que la URL del código sea la correcta.
-        <br><button type="button" onclick="load()">Reintentar</button>
+        <br><button type="button" onclick="reload()">Reintentar</button>
       </div>`;
   }
 }
 
 // ===== Interfaz =====
-function setStatus(html) { document.getElementById("status").innerHTML = html; }
+function setStatus(text) { document.getElementById("status").textContent = text; }
 
 function updateStatus(shown) {
   const total = state.all.length;
   const n = shown ?? total;
   const noPin = state.all.filter(r => r.lat == null).length;
-  let txt = state.reco ? `${n} recomendaciones de ${total} restaurantes`
+  let txt = state.reco ? `${n} ${n === 1 ? "recomendación" : "recomendaciones"} de ${total}`
     : n === total ? `${total} restaurantes` : `${n} de ${total} restaurantes`;
-  if (noPin) txt += `. ${noPin} sin coordenadas`;
-  if (state.loadedAt) txt += `. Datos de las ${state.loadedAt}, <button type="button" onclick="load()">actualizar</button>`;
+  if (noPin) txt += `, ${noPin} sin coordenadas`;
   setStatus(txt);
+  if (state.loadedAt) document.getElementById("refresh").title = `Datos de las ${state.loadedAt}. Toca para actualizar`;
 }
 
 const cap = t => t.charAt(0).toUpperCase() + t.slice(1).toLowerCase();
@@ -608,7 +872,11 @@ function buildFilters() {
 function syncFilterUI() {
   const on = { "f-city": state.city, "f-style": state.style, "f-score": state.score };
   for (const [id, v] of Object.entries(on)) document.getElementById(id).classList.toggle("on", !!v);
-  document.getElementById("clear").hidden = !(state.city || state.style || state.score || state.q);
+  const n = Object.values(on).filter(Boolean).length;
+  const badge = document.getElementById("filter-count");
+  badge.textContent = n;
+  badge.hidden = !n;
+  document.getElementById("clear").hidden = !(n || state.q);
 }
 
 function filtered() {
@@ -630,12 +898,24 @@ function filtered() {
 function popupHTML(r) {
   const dir = `https://www.google.com/maps/dir/?api=1&destination=${r.lat},${r.lng}`;
   return `<div class="pop">
-    <h3>${esc(r.name)}</h3>
-    ${r.style ? `<p>${esc(r.style)}</p>` : ""}
-    ${r.location ? `<p>${esc(r.location)}</p>` : ""}
-    <p>Puntaje: <strong style="color:var(--ink)">${fmtScore(r.score)}</strong></p>
-    <a href="${dir}" target="_blank" rel="noopener">Cómo llegar</a>
+    ${ringHTML(r)}
+    <div>
+      <h3>${esc(r.name)}</h3>
+      ${r.style ? `<p>${esc(r.style)}</p>` : ""}
+      ${r.location ? `<p>${esc(r.location)}</p>` : ""}
+    </div>
+    <a class="dir" href="${dir}" target="_blank" rel="noopener">Cómo llegar</a>
   </div>`;
+}
+
+// La ficha se acomoda para no quedar debajo del panel
+function popupOptions() {
+  const c = isSheet() ? { left: 0, bottom: sheet.peekHeight() } : covered();
+  return {
+    maxWidth: 300, minWidth: 240,
+    autoPanPaddingTopLeft: L.point(c.left + 16, 16),
+    autoPanPaddingBottomRight: L.point(16, c.bottom + 16)
+  };
 }
 
 function recoHeader(reco) {
@@ -643,70 +923,99 @@ function recoHeader(reco) {
   head.className = "reco-head";
   head.innerHTML = `
     <h2>Te recomiendo</h2>
-    ${reco.chips.length ? `<div class="chips">${reco.chips.map(c => `<span>${esc(c)}</span>`).join("")}</div>` : ""}
+    ${reco.chips.length ? `<div class="chips">${reco.chips.map((c, i) => `<span style="--d:${i * 50}ms">${esc(c)}</span>`).join("")}</div>` : ""}
     ${reco.notes.map(n => `<p class="note">${esc(n)}</p>`).join("")}
     <button type="button" class="back">Ver todos los restaurantes</button>`;
   head.querySelector(".back").addEventListener("click", () => {
     state.reco = null;
     document.getElementById("ask-q").value = "";
-    render(true);
+    render(true, true);
   });
   return head;
 }
 
-function render(fit) {
+// Vuela hasta el pin y, si quedó dentro de un grupo, lo abre para mostrarlo
+function focusPin(m) {
+  map.closePopup();
+  if (pendingFly) map.off("moveend", pendingFly);
+  pendingFly = () => { pendingFly = null; layer.zoomToShowLayer(m, () => m.openPopup()); };
+  map.once("moveend", pendingFly);
+  centerOn(m.getLatLng(), 16);
+}
+
+// Al pasar por un restaurante de la lista, su pin (o su grupo) se levanta en el mapa
+let lifted = null;
+function liftPin(id) {
+  if (lifted) { lifted.getElement()?.classList.remove("lift"); lifted.setZIndexOffset(0); lifted = null; }
+  const m = id == null ? null : markers.get(id);
+  const target = m && layer.getVisibleParent(m);
+  if (!target) return;
+  target.getElement()?.classList.add("lift");
+  target.setZIndexOffset(1000);
+  lifted = target;
+}
+
+let painted = false;
+function render(fit, animate = !painted) {
+  painted = true;
   const rows = state.reco ? state.reco.rows : filtered();
   const list = document.getElementById("list");
+  liftPin(null);
   layer.clearLayers();
   markers.clear();
   list.innerHTML = "";
   // En modo recomendación los filtros no aplican: se ocultan para dar espacio a los resultados
-  document.querySelector(".controls").hidden = !!state.reco;
+  document.querySelector(".tools").hidden = !!state.reco;
   document.querySelector(".examples").hidden = !!state.reco;
   if (state.reco) list.appendChild(recoHeader(state.reco));
 
   if (!rows.length) {
     if (state.reco) { updateStatus(0); return; }
     list.innerHTML = state.all.length
-      ? `<div class="empty"><strong>Ningún restaurante coincide.</strong>Prueba otra combinación o pulsa «Quitar filtros».</div>`
-      : `<div class="empty"><strong>La hoja está vacía.</strong>Agrega restaurantes en la hoja y pulsa actualizar.</div>`;
+      ? `<div class="empty"><strong>Ningún restaurante coincide.</strong>Prueba otra combinación o toca «Quitar filtros».</div>`
+      : `<div class="empty"><strong>La hoja está vacía.</strong>Agrega restaurantes en la hoja y toca actualizar.</div>`;
     updateStatus(0);
     return;
   }
 
+  const popOpts = popupOptions();
   const frag = document.createDocumentFragment();
-  for (const r of rows) {
+  rows.forEach((r, i) => {
     if (r.lat != null) {
-      const m = L.marker([r.lat, r.lng], { icon: pinIcon(r), title: r.name }).bindPopup(popupHTML(r));
-      m.on("click", () => highlight(r.id, true));
+      const m = L.marker([r.lat, r.lng], { icon: pinIcon(r), title: r.name }).bindPopup(popupHTML(r), popOpts);
+      m.on("click", () => {
+        highlight(r.id, true);
+        if (isSheet()) sheet.snap("peek");
+      });
       markers.set(r.id, m);
     }
 
     const b = document.createElement("button");
     b.type = "button";
     b.className = "item" + (state.activeId === r.id ? " active" : "");
+    if (animate && i < 14) { b.classList.add("enter"); b.style.setProperty("--d", `${i * 40}ms`); }
     b.dataset.id = r.id;
     b.innerHTML = `
-      <span class="score" style="background:${tier(r.score)}">${fmtScore(r.score)}</span>
-      <span>
-        <p class="name">${esc(r.name)}</p>
-        <p class="meta">${esc([r.style, r.location].filter(Boolean).join(", "))}</p>
-        ${state.reco && state.reco.why(r) ? `<p class="why">${esc(state.reco.why(r))}</p>` : ""}
-        ${r.lat == null ? `<p class="nopin">Sin coordenadas en la hoja</p>` : ""}
+      ${ringHTML(r)}
+      <span class="txt">
+        <span class="name">${esc(r.name)}</span>
+        <span class="meta">${esc([r.style, r.location].filter(Boolean).join(", "))}</span>
+        ${state.reco && state.reco.why(r) ? `<span class="why">${esc(state.reco.why(r))}</span>` : ""}
+        ${r.lat == null ? `<span class="nopin">Sin coordenadas en la hoja</span>` : ""}
       </span>`;
     b.addEventListener("click", () => {
       highlight(r.id, false);
       const m = markers.get(r.id);
       if (!m) return;
-      map.closePopup();
-      // Vuela hasta el pin y, si quedó dentro de un grupo, lo abre para mostrarlo
-      if (pendingFly) map.off("moveend", pendingFly);
-      pendingFly = () => { pendingFly = null; layer.zoomToShowLayer(m, () => m.openPopup()); };
-      map.once("moveend", pendingFly);
-      map.flyTo(m.getLatLng(), 16, { duration: 0.6 });
+      if (isSheet()) sheet.snap("peek");
+      focusPin(m);
     });
+    b.addEventListener("pointerenter", () => liftPin(r.id));
+    b.addEventListener("pointerleave", () => liftPin(null));
+    b.addEventListener("focus", () => liftPin(r.id));
+    b.addEventListener("blur", () => liftPin(null));
     frag.appendChild(b);
-  }
+  });
   list.appendChild(frag);
   layer.addLayers([...markers.values()]);
   updateStatus(rows.length);
@@ -720,11 +1029,115 @@ function highlight(id, scroll) {
   if (scroll) document.querySelector(`.item[data-id="${id}"]`)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
 }
 
+// ===== Hoja deslizable (solo móvil) =====
+// Tres alturas: "peek" (título y antojos), "mid" (mitad) y "full". Se arrastra desde el asa
+// con un resorte que conserva la velocidad del dedo, como las hojas de Apple Maps.
+const sheet = (() => {
+  const panel = document.getElementById("panel");
+  const grip = panel.querySelector(".hero");
+  const list = document.getElementById("list");
+  let y = 0, v = 0, target = 0, raf = 0, name = "mid", drag = null;
+
+  const H = () => panel.offsetHeight;
+  const peekVisible = () => {
+    const ask = document.getElementById("ask");
+    return Math.min(H(), ask.offsetTop + ask.offsetHeight);
+  };
+  const snaps = () => ({
+    full: 0,
+    mid: Math.max(0, H() - Math.round(innerHeight * 0.52)),
+    peek: Math.max(0, H() - peekVisible())
+  });
+  const apply = () => { panel.style.transform = `translate3d(0, ${y}px, 0)`; };
+  // Deja espacio al final de la lista para poder ver los últimos restaurantes en cualquier altura
+  const settle = () => { list.style.paddingBottom = `${Math.round(y) + 16}px`; };
+  const rubber = (over, dim) => (over * dim * 0.55) / (dim + 0.55 * over);
+
+  function animateTo(to, velocity = 0) {
+    target = to; v = velocity;
+    cancelAnimationFrame(raf);
+    if (reducedMotion()) { y = to; apply(); settle(); return; }
+    let last = performance.now();
+    const omega = (2 * Math.PI) / 0.38;            // respuesta de 0,38 s
+    // Un leve rebote solo si hubo un lanzamiento, y nunca al llegar arriba del todo
+    const zeta = Math.abs(velocity) > 900 && to > 0 ? 0.82 : 1;
+    v = Math.max(-2500, Math.min(2500, velocity));
+    const step = now => {
+      const dt = Math.min((now - last) / 1000, 1 / 30);
+      last = now;
+      v += (-omega * omega * (y - target) - 2 * zeta * omega * v) * dt;
+      y = Math.max(-6, y + v * dt); // la hoja no se despega del borde inferior
+      if (Math.abs(y - target) < 0.4 && Math.abs(v) < 8) { y = target; v = 0; apply(); settle(); return; }
+      apply();
+      raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+  }
+
+  function snap(n, velocity = 0) {
+    if (!isSheet()) return;
+    name = n;
+    animateTo(snaps()[n], velocity);
+  }
+
+  grip.addEventListener("pointerdown", e => {
+    if (!isSheet() || e.button > 0 || e.target.closest("button, input, .examples")) return;
+    cancelAnimationFrame(raf);
+    drag = { id: e.pointerId, startY: e.clientY, from: y, moved: false, hist: [{ t: e.timeStamp, y: e.clientY }] };
+    grip.setPointerCapture(e.pointerId);
+  });
+  grip.addEventListener("pointermove", e => {
+    if (!drag || e.pointerId !== drag.id) return;
+    const dy = e.clientY - drag.startY;
+    if (!drag.moved && Math.abs(dy) < 6) return;
+    drag.moved = true;
+    const max = snaps().peek;
+    let next = drag.from + dy;
+    if (next < 0) next = -rubber(-next, 40); // arriba casi no cede: debajo no hay más hoja
+    else if (next > max) next = max + rubber(next - max, H());
+    y = next;
+    apply();
+    drag.hist.push({ t: e.timeStamp, y: e.clientY });
+    while (drag.hist.length > 2 && e.timeStamp - drag.hist[0].t > 100) drag.hist.shift();
+  });
+  const end = e => {
+    if (!drag || e.pointerId !== drag.id) return;
+    const d = drag;
+    drag = null;
+    if (!d.moved) { snap(name === "peek" ? "mid" : name === "mid" ? "full" : "mid"); return; }
+    const a = d.hist[0], b = d.hist[d.hist.length - 1];
+    const vel = b.t > a.t ? (b.y - a.y) / ((b.t - a.t) / 1000) : 0;
+    // Proyecta hacia dónde iba el dedo y elige la altura más cercana a ese punto
+    const projected = y + (vel / 1000) * 0.99 / (1 - 0.99);
+    const s = snaps();
+    const best = Object.keys(s).sort((p, q) => Math.abs(s[p] - projected) - Math.abs(s[q] - projected))[0];
+    snap(best, vel);
+  };
+  grip.addEventListener("pointerup", end);
+  grip.addEventListener("pointercancel", end);
+
+  function sync() {
+    if (isSheet()) { cancelAnimationFrame(raf); y = target = snaps()[name]; apply(); settle(); }
+    else { cancelAnimationFrame(raf); panel.style.transform = ""; list.style.paddingBottom = ""; }
+  }
+  addEventListener("resize", sync);
+
+  return {
+    snap, sync,
+    get state() { return name; },
+    visible: () => H() - snaps()[name],
+    peekHeight: peekVisible
+  };
+})();
+
+// ===== Eventos =====
 function ask(text) {
   if (!text.trim() || !state.all.length) return;
   state.reco = recommend(text);
   state.activeId = null;
-  render(true);
+  document.getElementById("ask-q").blur();
+  if (isSheet()) sheet.snap("mid");
+  render(true, true);
   document.getElementById("list").scrollTop = 0;
 }
 document.getElementById("ask").addEventListener("submit", e => {
@@ -735,6 +1148,23 @@ document.querySelectorAll(".examples button").forEach(b => b.addEventListener("c
   document.getElementById("ask-q").value = b.textContent;
   ask(b.textContent);
 }));
+// En el móvil, al escribir la hoja sube para que el teclado no tape la caja
+for (const id of ["ask-q", "q"]) {
+  document.getElementById(id).addEventListener("focus", () => { if (isSheet()) sheet.snap("full"); });
+}
+// Mover el mapa en el móvil baja la hoja para dejarlo a la vista
+map.on("dragstart", () => { if (isSheet() && sheet.state !== "peek") sheet.snap("peek"); });
+
+const filtersBtn = document.getElementById("toggle-filters");
+const filtersBox = document.getElementById("filters");
+filtersBox.inert = true;
+filtersBtn.addEventListener("click", () => {
+  const open = filtersBtn.getAttribute("aria-expanded") !== "true";
+  filtersBtn.setAttribute("aria-expanded", String(open));
+  filtersBox.classList.toggle("open", open);
+  filtersBox.inert = !open;
+  if (open && isSheet()) sheet.snap("full");
+});
 
 // Tocar la búsqueda o un filtro sale del modo recomendación
 let t;
@@ -754,7 +1184,15 @@ document.getElementById("clear").addEventListener("click", () => {
 });
 document.getElementById("sort").addEventListener("change", e => { state.sort = e.target.value; render(false); });
 
-load();
+const refreshBtn = document.getElementById("refresh");
+async function reload() {
+  refreshBtn.classList.add("spin");
+  try { await load(); } finally { refreshBtn.classList.remove("spin"); }
+}
+refreshBtn.addEventListener("click", reload);
+
+sheet.sync();
+reload();
 </script>
 </body>
 </html>
