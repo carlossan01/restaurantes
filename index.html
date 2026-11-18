@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Mis restaurantes</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&display=swap" rel="stylesheet">
@@ -118,6 +119,23 @@
   .pop p { margin: 0 0 3px; color: var(--muted); font-size: 0.88rem; }
   .pop a { color: var(--accent); font-weight: 600; }
 
+  /* Pines con el puntaje y grupos de pines */
+  .pin, .cluster { background: none; border: 0; }
+  .pin span, .cluster span {
+    display: grid; place-items: center; width: 100%; height: 100%;
+    border-radius: 50%; font-family: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+    font-weight: 800; line-height: 1; letter-spacing: -0.02em;
+  }
+  .pin span {
+    color: #fff; font-size: 12px; border: 2px solid #fff;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+  }
+  .cluster span {
+    /* El mapa base siempre es claro, así que el grupo va oscuro en ambos temas */
+    background: #1C2420; color: #fff; font-size: 13px;
+    box-shadow: 0 0 0 5px rgba(28, 36, 32, 0.22);
+  }
+
   @media (max-width: 760px) {
     #app { flex-direction: column; }
     #map { flex: 0 0 42vh; flex: 0 0 42dvh; }
@@ -171,6 +189,7 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.js"></script>
 <script>
 // ===== Configuración =====
 // URL de la hoja publicada como CSV (Archivo → Compartir → Publicar en la web → CSV)
@@ -204,17 +223,55 @@ function fmtScore(score) {
 }
 
 // ===== Mapa =====
+// CARTO exige clave para sus mapas base
 const CARTO_KEY = "cb1_4na0_1_97ca5fd991ca6b67f507fe2e";
 const map = L.map("map", { zoomControl: true }).setView(START_VIEW, 12);
 L.tileLayer(`https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png?key=${CARTO_KEY}`, {
   maxZoom: 19,
   attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
 }).addTo(map);
-const layer = L.layerGroup().addTo(map);
+// Si el contenedor cambia de tamaño (girar el móvil, etc.), el mapa se recalcula
+new ResizeObserver(() => map.invalidateSize()).observe(document.getElementById("map"));
+
+// Agrupa los pines cercanos; los que comparten coordenadas se abren en abanico al hacer clic
+const layer = L.markerClusterGroup({
+  maxClusterRadius: 40,
+  showCoverageOnHover: false,
+  spiderfyOnMaxZoom: true,
+  iconCreateFunction: c => {
+    const n = c.getChildCount();
+    const size = n < 10 ? 34 : n < 50 ? 40 : 46;
+    return L.divIcon({ className: "cluster", html: `<span>${n}</span>`, iconSize: [size, size] });
+  }
+}).addTo(map);
+
+const pinIcon = r => L.divIcon({
+  className: "pin",
+  html: `<span style="background:${tier(r.score)}">${fmtScore(r.score)}</span>`,
+  iconSize: [32, 32],
+  popupAnchor: [0, -14]
+});
+
+// Encuadra la zona con más restaurantes (radio de 25 km) en lugar del mundo entero
+function fitView(rows) {
+  const pts = rows.filter(r => r.lat != null).map(r => L.latLng(r.lat, r.lng));
+  if (!pts.length) return;
+  let group = pts;
+  if (pts.length > 1) {
+    let best = [];
+    for (const p of pts) {
+      const near = pts.filter(q => p.distanceTo(q) <= 25000);
+      if (near.length > best.length) best = near;
+    }
+    if (best.length > 1) group = best;
+  }
+  map.fitBounds(L.latLngBounds(group), { padding: [40, 40], maxZoom: 15 });
+}
 
 // ===== Estado =====
 const state = { all: [], city: "", style: "", score: "", q: "", sort: "score", activeId: null };
 const markers = new Map();
+let pendingFly = null;
 
 // ===== Datos =====
 function parseRow(row, i) {
@@ -240,7 +297,7 @@ function parseRow(row, i) {
     id: i,
     name,
     style,
-    tags: style.split(/[,/|]+/).map(t => t.trim().replace(/[.\s-]+$/, "")).filter(Boolean),
+    tags: style.split(/[,/|]+|\s+-\s*|\s*-\s+/).map(t => t.trim().replace(/[.\s-]+$/, "")).filter(Boolean),
     city: (city.split(",")[0] || "").trim(),
     location,
     score: Number.isFinite(s) ? s : null,
@@ -381,13 +438,8 @@ function render(fit) {
   const frag = document.createDocumentFragment();
   for (const r of rows) {
     if (r.lat != null) {
-      const m = L.circleMarker([r.lat, r.lng], {
-        radius: 9, weight: 2, color: "#fff",
-        fillColor: getComputedStyle(document.documentElement).getPropertyValue(tier(r.score).slice(4, -1)).trim(),
-        fillOpacity: 1
-      }).bindPopup(popupHTML(r));
+      const m = L.marker([r.lat, r.lng], { icon: pinIcon(r), title: r.name }).bindPopup(popupHTML(r));
       m.on("click", () => highlight(r.id, true));
-      layer.addLayer(m);
       markers.set(r.id, m);
     }
 
@@ -405,17 +457,21 @@ function render(fit) {
     b.addEventListener("click", () => {
       highlight(r.id, false);
       const m = markers.get(r.id);
-      if (m) { map.flyTo(m.getLatLng(), 16, { duration: 0.6 }); m.openPopup(); }
+      if (!m) return;
+      map.closePopup();
+      // Vuela hasta el pin y, si quedó dentro de un grupo, lo abre para mostrarlo
+      if (pendingFly) map.off("moveend", pendingFly);
+      pendingFly = () => { pendingFly = null; layer.zoomToShowLayer(m, () => m.openPopup()); };
+      map.once("moveend", pendingFly);
+      map.flyTo(m.getLatLng(), 16, { duration: 0.6 });
     });
     frag.appendChild(b);
   }
   list.appendChild(frag);
+  layer.addLayers([...markers.values()]);
   updateStatus(rows.length);
 
-  if (fit && markers.size) {
-    const b = L.latLngBounds([...markers.values()].map(m => m.getLatLng()));
-    map.fitBounds(b, { padding: [40, 40], maxZoom: 15 });
-  }
+  if (fit) fitView(rows);
 }
 
 function highlight(id, scroll) {
