@@ -27,7 +27,6 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <style>
   /* ===== Colores y medidas ===== */
   :root {
@@ -429,6 +428,14 @@
   .pop h3 { margin: 0; font-size: 1.05rem; font-weight: 800; letter-spacing: -0.02em; line-height: 1.15; }
   .pop p { margin: 2px 0 0; color: var(--muted); font-size: 0.85rem; }
   .pop .community { margin-top: 6px; font-size: 0.82rem; }
+  .pop-loading { display: grid; grid-template-columns: 44px 1fr; gap: 12px; align-items: center; min-height: 64px; }
+  .pop-loading .sk-ring { width: 44px; height: 44px; border-radius: 50%; }
+  .pop-loading .sk-ring, .pop-loading .sk-line {
+    background: linear-gradient(90deg, var(--fill) 25%, var(--fill-strong) 50%, var(--fill) 75%);
+    background-size: 200% 100%; animation: shimmer 1.3s linear infinite;
+  }
+  .pop-loading .sk-line { display: block; height: 12px; border-radius: 6px; margin: 6px 0; }
+  .pop-loading .sk-line.short { width: 60%; }
   .pop .community strong { color: var(--ink); }
   .community .rate {
     border: 0; background: none; padding: 0; cursor: pointer;
@@ -562,40 +569,7 @@
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
         <input type="search" id="q" placeholder="Busca por nombre o dirección" aria-label="Buscar restaurantes">
       </label>
-      <button type="button" id="toggle-filters" aria-expanded="false" aria-controls="filters">
-        Filtros <span class="badge" id="filter-count" hidden></span>
-      </button>
     </div>
-    <div class="filters-wrap" id="filters">
-      <div>
-        <div class="filters">
-          <label>Ciudad
-            <select id="f-city"><option value="">Todas</option></select>
-          </label>
-          <label>Tipo de comida
-            <select id="f-style"><option value="">Todos</option></select>
-          </label>
-          <label>Puntaje
-            <select id="f-score">
-              <option value="">Cualquiera</option>
-              <option value="10">Solo 10</option>
-              <option value="9">9 o más</option>
-              <option value="8">8 o más</option>
-              <option value="7">7 o más</option>
-              <option value="-7">Menos de 7</option>
-            </select>
-          </label>
-          <label>Ordenar por
-            <select id="sort">
-              <option value="score">Mejor puntaje</option>
-              <option value="name">Nombre A–Z</option>
-              <option value="city">Ciudad</option>
-            </select>
-          </label>
-        </div>
-      </div>
-    </div>
-    <button type="button" id="clear" hidden>Quitar filtros</button>
   </div>
 
   <div id="list" aria-live="polite">
@@ -609,19 +583,10 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.js"></script>
 <script>
 // ===== Configuración =====
-// URL de la hoja publicada como CSV (Archivo → Compartir → Publicar en la web → CSV)
-const SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vStf526UD4ugy9VWSJdkMZRFndOHLKgRnyJHVYH8fv8v4--9QBx6bifwtFIsZmycvege-2WdaR6OV1I/pub?output=csv";
-const PROXY = url => "https://api.allorigins.win/raw?url=" + encodeURIComponent(url);
+// Intermediario (Apps Script dentro de la hoja): la hoja es privada y solo se entrega
+// lo que cada persona pide. Nunca se descarga la lista completa.
+const API = "https://script.google.com/macros/s/AKfycbyUoIa4Qhq51DGItw_QW3zTGNjMWND1YflaW-6ppLG7dLBVxTo75cn2jB18dSX0B88a/exec";
 const START_VIEW = [4.665, -74.06]; // Bogotá
-// Calificaciones de los visitantes: un formulario de Google guarda cada voto en una hoja.
-// Mientras estos datos estén vacíos, la función queda apagada y no se muestra.
-const RATINGS = {
-  formAction: "",      // https://docs.google.com/forms/d/e/<id>/formResponse
-  entryRestaurant: "", // campo "Restaurante" del formulario (entry.123…)
-  entryScore: "",      // campo "Puntaje" del formulario (entry.456…)
-  csv: ""              // pestaña de respuestas publicada como CSV
-};
-const ratingsOn = () => !!(RATINGS.formAction && RATINGS.entryRestaurant && RATINGS.entryScore && RATINGS.csv);
 // CARTO exige clave para sus mapas base
 const CARTO_KEY = "cb1_4na0_1_97ca5fd991ca6b67f507fe2e";
 
@@ -726,312 +691,45 @@ function centerOn(latlng, zoom) {
 }
 
 // ===== Estado =====
-const state = { all: [], city: "", style: "", score: "", q: "", sort: "score", activeId: null, reco: null };
+const state = { total: 0, dots: [], places: new Map(), results: null, q: "", activeId: null, reco: null };
 const markers = new Map();
 let pendingFly = null;
 
-// ===== Correcciones de ubicación =====
-// Ubicaciones verificadas en Google Maps (noviembre de 2026) para restaurantes cuya hoja tenía
-// una dirección de relleno o aproximada. Cada corrección solo se aplica mientras la hoja conserve
-// el valor viejo ("from"): si actualizas ese restaurante en la hoja, manda lo que pongas allá.
-// "to": coordenadas nuevas (null quita el pin) · "place": dirección a mostrar · "note": aviso en la lista
-const FIXES = {
-  "avemaria": {"from": [4.1491688, -73.6285475], "to": [4.1735671, -73.6431215]},
-  "rancho mx": {"from": [4.9187217, -74.02255699999999], "to": [4.9102103, -74.0198305]},
-  "oriente restaurante": {"from": [5.0445905, -73.7967966], "to": [4.9733576, -73.8158762]},
-  "bruce": {"from": [4.666214099999999, -74.05561089999999], "to": [4.6658416, -74.0557977]},
-  "happy monkey": {"from": [5.6344541, -73.523561], "to": [5.6328061, -73.5218456]},
-  "san cholao": {"from": [3.4516467, -76.5319854], "to": [3.4237721, -76.5384946]},
-  "casa de san isidro": {"from": [4.6056728, -74.0555255], "to": [4.6041108, -74.0552602]},
-  "milatto": {"from": [4.604964, -74.109122], "to": [4.6936663, -74.0592829], "place": "Cl. 105 #48-39"},
-  "kumeko tei": {"from": [4.604964, -74.109122], "to": [4.6477467, -74.0571647], "place": "Chapinero"},
-  "semolina": {"from": [4.885186399999999, -74.034815], "to": [4.8831232, -74.0349793]},
-  "mikela": {"from": [4.9187217, -74.02255699999999], "to": [4.9040398, -74.0301461]},
-  "ceviche fusion": {"from": [4.698264600000001, -74.05470590000002], "to": [4.6985182, -74.0547635], "place": "Calle 122 #15-28"},
-  "sabor llanero": {"from": [4.666848, -74.05257259999999], "to": [4.6667768, -74.052699]},
-  "queseria de mi sin ti": {"from": [4.8082492, -74.0920379], "to": [4.8006891, -74.0979709]},
-  "el tambor": {"from": [4.9099886, -74.0183873], "to": [4.9096482, -74.0175363]},
-  "quero arepa": {"from": [10.4265316, -75.5460405], "to": [10.426483, -75.5460936]},
-  "shoyu": {"from": null, "to": [4.6511544, -74.0553623]},
-  "myriam camhi": {"from": [4.604964, -74.109122], "to": [4.676967, -74.0501329], "place": "Chicó"},
-  "el carnero": {"from": [4.604964, -74.109122], "to": [4.667523, -74.0124038], "place": "Vía La Calera km 6"},
-  "el templo del te": {"from": [4.604964, -74.109122], "to": [4.6443628, -74.0580341], "place": "Chapinero"},
-  "mooi": {"from": [4.604964, -74.109122], "to": [4.6476034, -74.0610263], "place": "Chapinero"},
-  "boleo": {"from": [4.604964, -74.109122], "to": [4.7329452, -74.0663631], "place": "CC Parque La Colina"},
-  "longos": {"from": [4.604964, -74.109122], "to": [4.6750352, -74.0487508], "place": "Calle 93"},
-  "sipote": {"from": [4.6009486, -74.07726459999999], "to": [4.7024319, -74.0420255], "place": "CC Unicentro"},
-  "panaderia kuty": {"from": [3.4516467, -76.5319854], "to": [3.4689084, -76.5289231], "place": "Avenida Sexta"},
-  "chef burguer": {"from": [3.4516467, -76.5319854], "to": [3.4125651, -76.5488237], "place": "C.C. Mall Plaza", "city": "Cali"},
-  "octaba": {"from": [4.604964, -74.109122], "to": null, "place": "", "note": "Sin ubicación confirmada"},
-  "stromboli": {"from": [4.604964, -74.109122], "to": null, "place": "", "note": "Sin ubicación confirmada"},
-  "mi res": {"from": [4.604964, -74.109122], "to": null, "place": "", "note": "Sin ubicación confirmada"},
-  "dos del alma": {"from": [4.9099886, -74.0183873], "to": null, "note": "Sin ubicación confirmada"},
-  "franui": {"from": [4.710988599999999, -74.072092], "to": null, "note": "Solo a domicilio"},
-  "tio mao": {"from": [4.710988599999999, -74.072092], "to": null, "note": "Solo a domicilio"},
-};
-
-function applyFixes(list) {
-  const same = (a, b) => (a == null && b == null) || (a != null && b != null && Math.abs(a - b) < 1e-5);
-  for (const r of list) {
-    const f = FIXES[norm(r.name)];
-    if (!f) continue;
-    const [fLat, fLng] = f.from || [null, null];
-    if (!same(r.lat, fLat) || !same(r.lng, fLng)) continue;
-    r.lat = f.to ? f.to[0] : null;
-    r.lng = f.to ? f.to[1] : null;
-    if (f.city) r.city = f.city;
-    if (f.place != null) r.location = [f.place, r.city].filter(Boolean).join(", ");
-    if (f.note) r.note = f.note;
-    r.search = norm(`${r.name} ${r.style} ${r.location}`);
-  }
-  return list;
-}
-
-// ===== Datos =====
-function parseRow(row, i) {
-  const name = col(row, "restaurante", "nombre");
-  if (!name) return null;
-
-  let location = col(row, "ubicacion", "direccion");
-  const city = col(row, "ciudad");
-  if (city && !norm(location).includes(norm(city))) location = location ? `${location}, ${city}` : city;
-
-  let lat = nums(col(row, "lat", "latitud"))[0];
-  let lng = nums(col(row, "lng", "lon", "long", "longitud"))[0];
-  if (!(Number.isFinite(lat) && Number.isFinite(lng))) {
-    const c = nums(col(row, "coordenadas", "coords"));
-    lat = c[0]; lng = c[1];
-  }
-  const hasPin = Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180;
-
-  const s = nums(col(row, "puntaje", "calificacion", "nota"))[0];
-  const style = col(row, "estilo", "tipo");
-
-  // Columna opcional de precio por persona: "60000", "60.000", "60 mil" o "$$"
-  const priceRaw = col(row, "precio", "precio por persona", "costo", "valor", "rango de precio");
-  let price = null, priceLevel = null;
-  if (/^\s*\$+\s*$/.test(priceRaw)) priceLevel = Math.min(priceRaw.trim().length, 4);
-  else if (priceRaw) price = parseMoney(norm(priceRaw), true);
-
-  return {
-    id: i,
-    name,
-    style,
-    tags: style.split(/[,/|]+|\s+-\s*|\s*-\s+/).map(t => t.trim().replace(/[.\s-]+$/, "")).filter(Boolean),
-    city: (city.split(",")[0] || "").trim(),
-    location,
-    score: Number.isFinite(s) ? s : null,
-    lat: hasPin ? lat : null,
-    lng: hasPin ? lng : null,
-    price,
-    priceLevel,
-    styleN: norm(style),
-    nameN: norm(name),
-    search: norm(`${name} ${style} ${location}`)
-  };
-}
-
-// Convierte "80 mil", "80k", "80 lucas", "$80.000" o "80000" en pesos.
-// Con assumeMoney, un número suelto pequeño (p. ej. "80") se lee como miles.
-function parseMoney(t, assumeMoney) {
-  const m = t.match(/(\$\s*)?(\d{1,3}(?:\.\d{3})+|\d+(?:,\d+)?)\s*(mil\b|k\b|lucas?\b|pesos\b|cop\b)?/);
-  if (!m) return null;
-  let n = /\.\d{3}/.test(m[2]) ? Number(m[2].replace(/\./g, "")) : parseFloat(m[2].replace(",", "."));
-  if (/^(mil|k|luca)/.test(m[3] || "")) n *= 1000;
-  else if (n < 1000 && (assumeMoney || m[1] || m[3])) n *= 1000;
-  return Number.isFinite(n) && n > 0 ? Math.round(n) : null;
-}
+// ===== Datos (desde el intermediario) =====
 const fmtMoney = n => "$" + Math.round(n).toLocaleString("es-CO");
 
-// ===== Recomendador =====
-// Palabras que la persona puede escribir → tipos de comida de la hoja
-const CRAVINGS = [
-  { label: "japonesa", keys: ["sushi", "japon", "ramen", "maki", "nikkei"], tags: ["japonesa", "nikkon", "nikkei", "sushi"] },
-  { label: "asiática", keys: ["asiatic", "oriental", "wok", "thai", "tailandes"], tags: ["asiatica", "china", "coreana", "japonesa", "thai"] },
-  { label: "coreana", keys: ["corea"], tags: ["coreana"] },
-  { label: "china", keys: ["chin", "arroz chino", "chow"], tags: ["china", "asiatica"] },
-  { label: "pizza", keys: ["pizza"], tags: ["pizza", "pizzeria"] },
-  { label: "italiana", keys: ["pasta", "italian", "lasagna", "risotto"], tags: ["italiana", "pizzeria"] },
-  { label: "hamburguesa", keys: ["hamburgues", "burger", "burguer"], tags: ["hamburguesa", "americana"] },
-  { label: "carne", keys: ["carne", "asado", "parrilla", "steak", "res=", "costilla", "bbq", "barbecue", "churrasco", "picanha"], tags: ["parrillada", "steakhouse", "asadero", "llanera", "barbecue", "bbq"] },
-  { label: "pollo", keys: ["pollo", "alitas", "wings"], tags: ["pollo", "alitas"] },
-  { label: "mar", keys: ["mar=", "pescado", "marisco", "ceviche", "camaron", "pulpo"], tags: ["mar=", "pescaderia", "ceviche", "peruana"] },
-  { label: "mexicana", keys: ["mexic", "taco", "burrito", "nacho", "quesadilla"], tags: ["mexicana"] },
-  { label: "dulce", keys: ["dulce", "postre", "torta", "pastel", "helado", "chocolate", "waffle", "crepe"], tags: ["postre", "pasteleria", "heladeria", "panaderia", "chocolat"] },
-  { label: "café", keys: ["cafe", "tinto", "capuchino", "onces"], tags: ["cafe", "coffee", "panaderia"] },
-  { label: "desayuno", keys: ["desayun", "brunch", "huevos", "calentado"], tags: ["desayuno", "brunch"] },
-  { label: "árabe", keys: ["arabe", "shawarma", "falafel", "kebab"], tags: ["arabe"] },
-  { label: "india", keys: ["india", "hindu", "curry"], tags: ["hindu", "indio", "india"] },
-  { label: "peruana", keys: ["peru"], tags: ["peruana", "ceviche", "nikkon"] },
-  { label: "francesa", keys: ["frances", "francia"], tags: ["frances"] },
-  { label: "española", keys: ["espanol", "tapas", "paella"], tags: ["espanola", "catalana", "flamenco"] },
-  { label: "mediterránea", keys: ["mediterrane", "grieg"], tags: ["mediterranea"] },
-  { label: "colombiana", keys: ["colombian", "bandeja", "corrientazo", "ajiaco", "llaner", "tipic"], tags: ["colombiana", "llanera", "campestre", "asadero"] },
-  { label: "picar", keys: ["picar", "picada", "frito", "empanada", "pasabocas"], tags: ["picadas", "fritos", "bocatas", "alitas"] },
-  { label: "bar", keys: ["bar=", "cerveza", "trago", "coctel", "rumba", "karaoke"], tags: ["bar=", "gastro-bar", "karaoke", "flamenco"] },
-  { label: "saludable", keys: ["saludable", "sano", "ensalada", "bowl", "fit="], tags: ["bowl"] }
-];
-const STOP = new Set(("tengo ganas quiero comer algo rico rica bueno buena para somos personas persona pesos " +
-  "presupuesto hasta maximo unos unas como donde cerca esta este noche almuerzo cena comida lugar sitio " +
-  "restaurante gastar plata lucas especial cita aniversario celebrar barato barata economico economica " +
-  "pareja amigos familia mejor mejores").split(" "));
-const NUM_WORDS = { dos: 2, tres: 3, cuatro: 4, cinco: 5, seis: 6, siete: 7, ocho: 8, diez: 10 };
-const LEVEL_MIN = [0, 0, 35000, 70000, 150000]; // piso de cada nivel $, $$, $$$, $$$$
-const wordStart = (hay, w, exact) =>
-  new RegExp(`(^|[^a-z0-9])${w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}${exact ? "(?![a-z0-9])" : ""}`).test(hay);
-// Un término que termina en "=" debe ser palabra completa ("bar=" no casa con "barato")
-const hasTerm = (hay, k) => k.endsWith("=") ? wordStart(hay, k.slice(0, -1), true) : wordStart(hay, k);
-
-function understand(text) {
-  let t = norm(text).replace(/\b(dos|tres|cuatro|cinco|seis|siete|ocho|diez)\b/g, w => NUM_WORDS[w]);
-  const q = { cravings: [], words: [], city: null, budget: null, people: null, cheap: false, special: false };
-
-  // Personas: "para 4", "somos 3", "en pareja"
-  const pm = t.match(/(?:para|somos)\s+(\d{1,2})(?!\s*(?:mil|k\b|lucas?|pesos|\.\d{3}|\d))/);
-  if (pm) { q.people = Number(pm[1]); t = t.replace(pm[0], " "); }
-  else if (/\b(pareja|cita)\b/.test(t)) q.people = 2;
-
-  // Presupuesto: solo números con pinta de plata
-  const money = t.match(/(?:\$\s*\d[\d.,]*|\d[\d.,]*\s*(?:mil\b|k\b|lucas?\b|pesos\b|cop\b)|\d{1,3}(?:\.\d{3})+|\d{4,})/)
-    || t.match(/(?:presupuesto|hasta|maximo|gastar|tengo)\D{0,12}(\d+)/);
-  if (money) {
-    q.budget = parseMoney(money[0], true);
-    t = t.replace(money[0], " ");
-    const perPerson = /por persona|cada uno|c\/u|por cabeza/.test(t);
-    if (q.budget && q.people > 1 && !perPerson) { q.total = q.budget; q.budget = Math.round(q.budget / q.people); }
-  }
-  q.cheap = /\b(barat|economic|poca plata|sin gastar)/.test(t);
-  q.special = /\b(especial|aniversario|cita|celebr|cumple|romantic|elegante|lujo)/.test(t);
-
-  // Ciudad: la más larga que aparezca en el texto
-  const cities = [...new Set(state.all.map(r => norm(r.city)).filter(Boolean))].sort((a, b) => b.length - a.length);
-  q.city = cities.find(c => wordStart(t, c, true)) || null;
-  if (q.city) t = t.replace(q.city, " ");
-
-  for (const g of CRAVINGS) if (g.keys.some(k => hasTerm(t, k))) q.cravings.push(g);
-
-  // Palabras sueltas que coinciden con un tipo de comida o nombre de la hoja ("crepes", "Bruce")
-  const used = q.cravings.flatMap(g => g.keys.map(k => k.replace(/=$/, "")));
-  for (const w of t.split(/[^a-z0-9]+/)) {
-    if (w.length < 4 || STOP.has(w) || /^\d/.test(w) || used.some(k => w.startsWith(k))) continue;
-    if (state.all.some(r => wordStart(r.styleN, w) || wordStart(r.nameN, w))) q.words.push(w);
-  }
-  return q;
+// Guarda en memoria los restaurantes que el intermediario ya entregó
+function remember(data) {
+  for (const p of [data.place, ...(data.places || []), ...(data.rows || [])]) if (p) state.places.set(p.id, p);
 }
 
-function mostCommonCity() {
-  const n = new Map();
-  for (const r of state.all) { const c = norm(r.city); if (c) n.set(c, (n.get(c) || 0) + 1); }
-  return [...n.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
-}
-
-function fitsBudget(r, budget) {
-  if (r.price != null) return r.price <= budget * 1.1;
-  if (r.priceLevel != null) return LEVEL_MIN[r.priceLevel] <= budget;
-  return null; // sin dato
-}
-
-function recommend(text) {
-  const q = understand(text);
-  const hasPrice = state.all.some(r => r.price != null || r.priceLevel != null);
-  const chips = [], notes = [];
-  let rows = state.all.slice();
-
-  const tags = q.cravings.flatMap(g => g.tags);
-  if (tags.length || q.words.length) {
-    q.cravings.forEach(g => chips.push(cap(g.label)));
-    q.words.forEach(w => chips.push(`“${w}”`));
-    rows = rows.filter(r => tags.some(tg => hasTerm(r.styleN, tg)) || q.words.some(w => wordStart(r.styleN, w) || wordStart(r.nameN, w)));
-  }
-  if (q.city) {
-    const cityName = cap(state.all.find(r => norm(r.city).includes(q.city)).city);
-    chips.push(cityName);
-    const inCity = rows.filter(r => norm(r.city).includes(q.city));
-    if (inCity.length || !rows.length) rows = inCity;
-    else notes.push(`No tienes de eso en ${cityName}; estos son de otras ciudades.`);
-  }
-
-  let budget = q.budget;
-  if (!budget && q.cheap) budget = 35000;
-  if (q.people) chips.push(`${q.people} personas`);
-  if (budget) {
-    chips.push(q.total ? `${fmtMoney(q.total)} en total (${fmtMoney(budget)} c/u)` : `hasta ${fmtMoney(budget)} por persona`);
-    if (!hasPrice) {
-      notes.push("Tu hoja todavía no tiene precios, así que no pude filtrar por presupuesto. Agrega una columna «Precio» con el valor por persona (por ejemplo 60000) o con $, $$, $$$.");
-    } else {
-      const inBudget = rows.filter(r => fitsBudget(r, budget) !== false);
-      if (inBudget.length) rows = inBudget;
-      else if (rows.length) notes.push("Nada entra en ese presupuesto; estos son los más cercanos.");
-    }
-  }
-  if (q.special) {
-    chips.push("algo especial");
-    const top = rows.filter(r => (r.score ?? 0) >= 9);
-    if (top.length >= 3) rows = top;
-  }
-
-  const understood = chips.length > 0;
-  if (!understood) notes.push("No reconocí un antojo; te muestro los mejor puntuados. Prueba con un tipo de comida, un plato o una ciudad.");
-  if (understood && !rows.length) notes.push("No encontré nada con eso en tu hoja. Prueba con otro antojo o quita la ciudad.");
-
-  // Orden: primero los que tienen precio dentro del presupuesto; si no se nombró ciudad,
-  // primero la ciudad con más restaurantes; luego por puntaje, y los empates al azar
-  // para que pedir otra vez muestre opciones distintas
-  const home = q.city ? null : mostCommonCity();
-  const rnd = new Map(rows.map(r => [r.id, Math.random()]));
-  rows.sort((a, b) =>
-    (budget && hasPrice ? (fitsBudget(a, budget) === true ? 0 : 1) - (fitsBudget(b, budget) === true ? 0 : 1) : 0) ||
-    (home ? (norm(a.city) === home ? 0 : 1) - (norm(b.city) === home ? 0 : 1) : 0) ||
-    (b.score ?? -1) - (a.score ?? -1) || rnd.get(a.id) - rnd.get(b.id));
-
-  const why = r => {
-    if (r.price != null) return `~${fmtMoney(r.price)} por persona`;
-    if (r.priceLevel != null) return "$".repeat(r.priceLevel);
-    if (budget && hasPrice) return "Sin precio en la hoja";
-    return "";
-  };
-  return { text, chips, notes, rows: rows.slice(0, 6), why };
-}
-
-async function fetchCSV() {
-  const bust = (SHEET_URL.includes("?") ? "&" : "?") + "t=" + Date.now();
-  try {
-    const r = await fetch(SHEET_URL + bust, { cache: "no-store" });
-    if (!r.ok) throw new Error(r.status);
-    return await r.text();
-  } catch (e) {
-    // Respaldo: proxy público, por si el navegador bloquea la lectura directa
-    const r = await fetch(PROXY(SHEET_URL + bust), { cache: "no-store" });
-    if (!r.ok) throw new Error(r.status);
-    return await r.text();
-  }
+async function api(params) {
+  const u = new URL(API);
+  for (const [k, v] of Object.entries(params)) u.searchParams.set(k, v);
+  const res = await fetch(u, { cache: "no-store" });
+  if (!res.ok) throw new Error(res.status);
+  const data = await res.json();
+  if (data.error) throw new Error(data.error);
+  remember(data);
+  return data;
 }
 
 async function load() {
-  setStatus("Cargando la hoja…");
+  setStatus("Cargando…");
   try {
-    const text = await fetchCSV();
-    if (/^\s*<!doctype html|<html/i.test(text)) throw new Error("La URL no devuelve un CSV");
-    const { data: grid } = Papa.parse(text, { skipEmptyLines: true });
-    // La fila de encabezados es la que dice "Restaurante", esté donde esté
-    const h = grid.findIndex(r => r.some(c => ["restaurante", "nombre"].includes(norm(c))));
-    if (h < 0) throw new Error("No se encontró la fila de encabezados");
-    const headers = grid[h];
-    const rows = grid.slice(h + 1).map(r => Object.fromEntries(headers.map((k, i) => [k || `col${i}`, r[i] ?? ""])));
-    state.all = applyFixes(rows.map(parseRow).filter(Boolean));
-    if (state.reco && !state.reco.kind) state.reco = recommend(state.reco.text);
-    buildFilters();
+    const d = await api({ a: "dots" });
+    state.total = d.total;
+    state.dots = d.dots.map(([id, lat, lng]) => ({ id, lat, lng }));
     render(true);
-    const time = new Date().toLocaleTimeString("es-CO", { hour: "numeric", minute: "2-digit" });
-    state.loadedAt = time;
+    state.loadedAt = new Date().toLocaleTimeString("es-CO", { hour: "numeric", minute: "2-digit" });
     updateStatus();
   } catch (err) {
     console.error(err);
-    setStatus("No se pudo leer la hoja.");
+    setStatus("No se pudo cargar la información.");
     document.getElementById("list").innerHTML = `
       <div class="empty">
-        <strong>No se pudo leer la hoja de Google.</strong>
-        Revisa que siga publicada en la web como CSV y que la URL del código sea la correcta.
+        <strong>No se pudo cargar la información.</strong>
+        Revisa tu conexión e inténtalo de nuevo.
         <br><button type="button" onclick="reload()">Reintentar</button>
       </div>`;
   }
@@ -1041,7 +739,7 @@ async function load() {
 function setStatus(text) { document.getElementById("status").textContent = text; }
 
 // Sin búsqueda, filtro ni recomendación: se muestra la bienvenida y no la lista completa
-const isBrowsing = () => !state.reco && !state.q.trim() && !state.city && !state.style && !state.score;
+const isBrowsing = () => !state.reco && !state.results;
 // "Más de 220" en lugar del número exacto
 const moreThan = n => (n >= 20 ? Math.floor(n / 10) * 10 : n);
 
@@ -1049,61 +747,13 @@ function updateStatus(shown) {
   const n = shown ?? 0;
   let txt;
   if (state.reco) txt = `${n} ${n === 1 ? "recomendación" : "recomendaciones"}`;
-  else if (isBrowsing()) txt = state.all.length ? `Más de ${moreThan(state.all.length)} restaurantes probados` : "";
+  else if (isBrowsing()) txt = state.total ? `Más de ${moreThan(state.total)} restaurantes probados` : "";
   else txt = `${n} ${n === 1 ? "resultado" : "resultados"}`;
   setStatus(txt);
   if (state.loadedAt) document.getElementById("refresh").title = `Datos de las ${state.loadedAt}. Toca para actualizar`;
 }
 
 const cap = t => t.charAt(0).toUpperCase() + t.slice(1).toLowerCase();
-
-function fillSelect(id, values, current, allLabel) {
-  const freq = new Map();
-  for (const v of values) {
-    const k = norm(v);
-    if (!k) continue;
-    if (!freq.has(k)) freq.set(k, { label: v, n: 0 });
-    freq.get(k).n++;
-  }
-  const opts = [...freq.entries()].sort((a, b) => b[1].n - a[1].n || a[1].label.localeCompare(b[1].label, "es"));
-  const sel = document.getElementById(id);
-  sel.innerHTML = `<option value="">${allLabel}</option>` +
-    opts.map(([k, v]) => `<option value="${esc(k)}">${esc(v.label)} (${v.n})</option>`).join("");
-  sel.value = freq.has(current) ? current : "";
-  return sel.value;
-}
-
-function buildFilters() {
-  state.city = fillSelect("f-city", state.all.map(r => r.city), state.city, "Todas");
-  state.style = fillSelect("f-style", state.all.flatMap(r => r.tags.map(cap)), state.style, "Todos");
-  syncFilterUI();
-}
-
-function syncFilterUI() {
-  const on = { "f-city": state.city, "f-style": state.style, "f-score": state.score };
-  for (const [id, v] of Object.entries(on)) document.getElementById(id).classList.toggle("on", !!v);
-  const n = Object.values(on).filter(Boolean).length;
-  const badge = document.getElementById("filter-count");
-  badge.textContent = n;
-  badge.hidden = !n;
-  document.getElementById("clear").hidden = !(n || state.q);
-}
-
-function filtered() {
-  const q = norm(state.q);
-  const min = state.score === "" ? null : Number(state.score);
-  const out = state.all.filter(r =>
-    (!q || r.search.includes(q)) &&
-    (!state.city || norm(r.city) === state.city) &&
-    (!state.style || r.tags.some(t => norm(t) === state.style)) &&
-    (min == null ||
-      (min < 0 ? r.score != null && r.score < -min : r.score != null && r.score >= min))
-  );
-  if (state.sort === "score") out.sort((a, b) => (b.score ?? -1) - (a.score ?? -1) || a.name.localeCompare(b.name, "es"));
-  else if (state.sort === "city") out.sort((a, b) => a.city.localeCompare(b.city, "es") || (b.score ?? -1) - (a.score ?? -1));
-  else out.sort((a, b) => a.name.localeCompare(b.name, "es"));
-  return out;
-}
 
 function popupHTML(r) {
   const dir = `https://www.google.com/maps/dir/?api=1&destination=${r.lat},${r.lng}`;
@@ -1177,11 +827,11 @@ async function shareLink(title, text, url) {
 }
 
 function shareRestaurant(id) {
-  const r = state.all.find(x => x.id === id);
+  const r = state.places.get(id);
   if (!r) return;
   const what = [r.style, r.city].filter(Boolean).join(", ");
   const score = r.score != null ? ` Tiene ${fmtScore(r.score)}/10.` : "";
-  shareLink(r.name, `${r.name}${what ? ` (${what})` : ""}.${score} Míralo en Mis restaurantes:`, linkFor({ r: slugOf(r) }));
+  shareLink(r.name, `${r.name}${what ? ` (${what})` : ""}.${score} Míralo en Mis restaurantes:`, linkFor({ r: r.slug }));
 }
 
 function openRestaurant(r) {
@@ -1194,26 +844,30 @@ function openRestaurant(r) {
 
 // Abre lo que venga en el enlace (un restaurante o una recomendación), una sola vez
 let deepLinkDone = false;
-function handleDeepLink() {
-  if (deepLinkDone || !state.all.length) return;
+async function handleDeepLink() {
+  if (deepLinkDone || !state.dots.length) return;
   deepLinkDone = true;
-  const p = new URLSearchParams(location.search);
-  const q = p.get("q"), slug = p.get("r");
-  if (q) { document.getElementById("ask-q").value = q; ask(q); }
-  else if (slug) {
-    const r = state.all.find(x => slugOf(x) === slug);
-    const m = r && markers.get(r.id);
-    if (!m) { toast("Ese restaurante ya no está en la lista"); return; }
-    // Salta directo al restaurante, sin el vuelo de bienvenida sobre la ciudad
-    highlight(r.id, true);
-    if (isSheet()) sheet.snap("peek");
-    map.stop();
-    const c = covered(), z = 17;
-    const p = map.project(m.getLatLng(), z).add([-c.left / 2, c.bottom / 2]);
-    map.setView(map.unproject(p, z), z, { animate: false });
-    layer.zoomToShowLayer(m, () => m.openPopup());
-  }
+  const params = new URLSearchParams(location.search);
+  const q = params.get("q"), slug = params.get("r");
+  if (q) { document.getElementById("ask-q").value = q; ask(q); return; }
+  if (!slug) return;
+  let r = null;
+  try { r = (await api({ a: "place", id: slug })).place; } catch {}
+  const m = r && markers.get(r.id);
+  if (!m) { toast("Ese restaurante ya no está en la lista"); return; }
+  // Salta directo al restaurante, sin el vuelo de bienvenida sobre la ciudad
+  highlight(r.id, true);
+  if (isSheet()) sheet.snap("peek");
+  map.stop();
+  const c = covered(), z = 17;
+  const p = map.project(m.getLatLng(), z).add([-c.left / 2, c.bottom / 2]);
+  map.setView(map.unproject(p, z), z, { animate: false });
+  layer.zoomToShowLayer(m, () => m.openPopup());
 }
+
+// Esqueleto de la ficha mientras llegan los datos del restaurante
+const loadingPopupHTML = () =>
+  `<div class="pop-loading"><span class="sk-ring"></span><span><span class="sk-line"></span><span class="sk-line short"></span></span></div>`;
 
 // La ficha se acomoda para no quedar debajo del panel
 function popupOptions() {
@@ -1240,6 +894,8 @@ function recoHeader(reco) {
   head.querySelector(".again")?.addEventListener("click", surprise);
   head.querySelector(".all").addEventListener("click", () => {
     state.reco = null;
+    state.results = null;
+    document.getElementById("q").value = "";
     document.getElementById("ask-q").value = "";
     setAddress();
     render(true, true);
@@ -1271,11 +927,16 @@ function liftPin(id) {
 }
 
 function makeMarker(r, icon, popOpts) {
-  const m = L.marker([r.lat, r.lng], { icon, title: r.name, rid: r.id }).bindPopup(() => popupHTML(r), popOpts);
+  const m = L.marker([r.lat, r.lng], { icon, title: r.name || "", rid: r.id }).bindPopup(() => {
+    const p = state.places.get(r.id);
+    return p ? popupHTML(p) : loadingPopupHTML();
+  }, popOpts);
   m.on("click", () => {
     highlight(r.id, true);
     if (isSheet()) sheet.snap("peek");
   });
+  // En el computador, al pasar el mouse se piden los datos para que la ficha abra al instante
+  m.on("mouseover", () => { if (!state.places.has(r.id)) api({ a: "place", id: r.id }).catch(() => {}); });
   return m;
 }
 
@@ -1284,7 +945,7 @@ const dotIcon = () => L.divIcon({ className: "dot", html: "<span></span>", iconS
 function teaserHTML() {
   const icon = d => `<span class="ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg></span>`;
   return `<div class="teaser">
-    <p class="teaser-big">Más de ${moreThan(state.all.length)} restaurantes</p>
+    <p class="teaser-big">Más de ${moreThan(state.total)} restaurantes</p>
     <p>Probados y calificados uno por uno. Cada punto del mapa es uno de ellos.</p>
     <div class="teaser-how">
       <button type="button" data-act="ask">${icon('<path d="M4 6h16M4 12h10M4 18h7"/>')}<span><strong>Cuéntame qué se te antoja</strong>y te digo a dónde ir.</span></button>
@@ -1304,7 +965,7 @@ function teaserAction(act) {
 let painted = false;
 function render(fit, animate = !painted) {
   painted = true;
-  const rows = state.reco ? state.reco.rows : filtered();
+  const rows = state.reco ? state.reco.rows : state.results || [];
   const list = document.getElementById("list");
   liftPin(null);
   layer.clearLayers();
@@ -1316,22 +977,20 @@ function render(fit, animate = !painted) {
   if (state.reco) list.appendChild(recoHeader(state.reco));
 
   // Bienvenida: el mapa muestra todos como puntos sin puntaje y el panel invita a interactuar
-  if (isBrowsing() && state.all.length) {
+  if (isBrowsing() && state.dots.length) {
     const popOpts = popupOptions();
-    for (const r of state.all) if (r.lat != null) markers.set(r.id, makeMarker(r, dotIcon(), popOpts));
+    for (const d of state.dots) markers.set(d.id, makeMarker(d, dotIcon(), popOpts));
     list.innerHTML = teaserHTML();
     list.querySelectorAll("[data-act]").forEach(b => b.addEventListener("click", () => teaserAction(b.dataset.act)));
     layer.addLayers([...markers.values()]);
     updateStatus();
-    if (fit) fitView(state.all);
+    if (fit) fitView(state.dots);
     return;
   }
 
   if (!rows.length) {
     if (state.reco) { updateStatus(0); return; }
-    list.innerHTML = state.all.length
-      ? `<div class="empty"><strong>Ningún restaurante coincide.</strong>Prueba otra combinación o toca «Quitar filtros».</div>`
-      : `<div class="empty"><strong>La hoja está vacía.</strong>Agrega restaurantes en la hoja y toca actualizar.</div>`;
+    list.innerHTML = `<div class="empty"><strong>Ningún restaurante coincide con tu búsqueda.</strong>Prueba con otro nombre o cuéntame qué se te antoja.</div>`;
     updateStatus(0);
     return;
   }
@@ -1351,7 +1010,7 @@ function render(fit, animate = !painted) {
       <span class="txt">
         <span class="name">${esc(r.name)}</span>
         <span class="meta">${esc([r.style, r.location].filter(Boolean).join(", "))}</span>
-        ${state.reco && state.reco.why(r) ? `<span class="why">${esc(state.reco.why(r))}</span>` : ""}
+        ${whyOf(r) ? `<span class="why">${esc(whyOf(r))}</span>` : ""}
         ${r.lat == null ? `<span class="nopin">${esc(r.note || "Sin ubicación en el mapa")}</span>` : ""}
       </span>`;
     b.addEventListener("click", () => openRestaurant(r));
@@ -1368,9 +1027,12 @@ function render(fit, animate = !painted) {
   if (fit) fitView(rows);
 }
 
+// Motivo que se muestra bajo cada resultado (distancia, precio…)
+const whyOf = r => (state.reco?.why ? state.reco.why(r) : r.why || "");
+
 function highlight(id, scroll) {
   state.activeId = id;
-  document.querySelectorAll(".item").forEach(el => el.classList.toggle("active", Number(el.dataset.id) === id));
+  document.querySelectorAll(".item").forEach(el => el.classList.toggle("active", el.dataset.id === id));
   if (scroll) document.querySelector(`.item[data-id="${id}"]`)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
 }
 
@@ -1476,12 +1138,27 @@ const sheet = (() => {
 })();
 
 // ===== Eventos =====
-function ask(text) {
-  if (!text.trim() || !state.all.length) return;
-  state.reco = recommend(text);
-  state.activeId = null;
+// Muestra un esqueleto en la lista mientras el intermediario responde
+function showLoadingList(text) {
+  setStatus(text);
+  document.getElementById("list").innerHTML = '<div class="sk"></div><div class="sk"></div><div class="sk"></div>';
+}
+
+async function ask(text) {
+  if (!text.trim() || !state.dots.length) return;
   document.getElementById("ask-q").blur();
   if (isSheet()) sheet.snap("mid");
+  showLoadingList("Buscando…");
+  try {
+    const d = await api({ a: "ask", q: text });
+    state.reco = { text, chips: d.chips, notes: d.notes, rows: d.rows };
+  } catch {
+    toast("No pude responder ahora. Intenta de nuevo");
+    render(false);
+    return;
+  }
+  state.results = null;
+  state.activeId = null;
   setAddress({ q: text });
   render(true, true);
   document.getElementById("list").scrollTop = 0;
@@ -1490,14 +1167,22 @@ function ask(text) {
 // Botón "Compartir" dentro de la ficha del mapa (Leaflet frena los clics, por eso se escucha en captura)
 document.getElementById("map").addEventListener("click", e => {
   const b = e.target.closest(".share");
-  if (b) shareRestaurant(Number(b.dataset.id));
+  if (b) shareRestaurant(b.dataset.id);
   const rb = e.target.closest(".rate");
-  if (rb) rate(Number(rb.dataset.id));
+  if (rb) rate(rb.dataset.id);
 }, true);
 // La dirección refleja el restaurante abierto
-map.on("popupopen", e => {
-  const r = state.all.find(x => x.id === e.popup._source?.options.rid);
-  if (r) setAddress({ r: slugOf(r) });
+// Al abrir una ficha se piden los datos de ese restaurante (y solo de ese)
+map.on("popupopen", async e => {
+  const id = e.popup._source?.options.rid;
+  let r = state.places.get(id);
+  if (!r) {
+    try { r = (await api({ a: "place", id })).place; } catch { r = null; }
+    if (!e.popup.isOpen()) return;
+    if (!r) { e.popup.setContent('<p class="pop-err">No se pudo cargar. Intenta de nuevo.</p>'); return; }
+    e.popup.update();
+  }
+  setAddress({ r: r.slug });
 });
 map.on("popupclose", () => setAddress(state.reco?.text ? { q: state.reco.text } : undefined));
 document.getElementById("ask").addEventListener("submit", e => {
@@ -1515,41 +1200,34 @@ for (const id of ["ask-q", "q"]) {
 // Mover el mapa en el móvil baja la hoja para dejarlo a la vista
 map.on("dragstart", () => { if (isSheet() && sheet.state !== "peek") sheet.snap("peek"); });
 
-const filtersBtn = document.getElementById("toggle-filters");
-const filtersBox = document.getElementById("filters");
-filtersBox.inert = true;
-filtersBtn.addEventListener("click", () => {
-  const open = filtersBtn.getAttribute("aria-expanded") !== "true";
-  filtersBtn.setAttribute("aria-expanded", String(open));
-  filtersBox.classList.toggle("open", open);
-  filtersBox.inert = !open;
-  if (open && isSheet()) sheet.snap("full");
-});
-
-// Tocar la búsqueda o un filtro sale del modo recomendación
-let t;
+// Búsqueda por nombre: el intermediario devuelve pocos resultados, nunca la lista completa
+let searchTimer, searchSeq = 0;
 document.getElementById("q").addEventListener("input", e => {
-  clearTimeout(t);
-  t = setTimeout(() => { state.q = e.target.value; state.reco = null; syncFilterUI(); render(true); }, 150);
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(async () => {
+    const q = e.target.value.trim();
+    const seq = ++searchSeq;
+    state.reco = null;
+    if (q.length < 2) { state.results = null; render(true); return; }
+    showLoadingList("Buscando…");
+    try {
+      const d = await api({ a: "search", q });
+      if (seq !== searchSeq) return; // llegó una búsqueda más nueva
+      state.results = d.rows;
+    } catch {
+      if (seq !== searchSeq) return;
+      state.results = [];
+      toast("No pude buscar ahora. Intenta de nuevo");
+    }
+    render(true, true);
+  }, 350);
 });
-for (const [id, key] of [["f-city", "city"], ["f-style", "style"], ["f-score", "score"]]) {
-  document.getElementById(id).addEventListener("change", e => { state[key] = e.target.value; state.reco = null; syncFilterUI(); render(true); });
-}
-document.getElementById("clear").addEventListener("click", () => {
-  Object.assign(state, { city: "", style: "", score: "", q: "", reco: null });
-  document.getElementById("q").value = "";
-  ["f-city", "f-style", "f-score"].forEach(id => (document.getElementById(id).value = ""));
-  syncFilterUI();
-  render(true);
-});
-document.getElementById("sort").addEventListener("change", e => { state.sort = e.target.value; render(false); });
 
 const refreshBtn = document.getElementById("refresh");
 async function reload() {
   refreshBtn.classList.add("spin");
   try { await load(); } finally { refreshBtn.classList.remove("spin"); }
   handleDeepLink();
-  loadCommunity();
 }
 refreshBtn.addEventListener("click", reload);
 
@@ -1574,67 +1252,39 @@ const PRIVACY_HTML = `
   <h2>Privacidad y ubicación</h2>
   <ul>
     <li><strong>Sin cuentas, sin cookies y sin contador de visitas.</strong> Esta página no recoge datos de quien la usa.</li>
-    <li><strong>Tu ubicación</strong> solo se usa si tocas «Cerca de mí», y tu navegador te pide permiso antes. Se usa dentro de tu dispositivo para medir distancias: no se guarda ni se envía a ningún servidor. Si no das el permiso, todo lo demás funciona igual.</li>
-    <li>Para mostrar el mapa y la lista, tu navegador descarga contenido de <strong>CARTO</strong> (el mapa), <strong>Google Fonts</strong> (la tipografía), <strong>Google Sheets</strong> (la lista) y <strong>cdnjs</strong> (código). Esos servicios reciben tu dirección IP y la zona del mapa que estás viendo, como en cualquier sitio con mapas.</li>
+    <li><strong>Tu ubicación</strong> solo se usa si tocas «Cerca de mí», y tu navegador te pide permiso antes. Se usa dentro de tu dispositivo para medir distancias: no se guarda ni se envía a ningún servidor. Para mostrarte los cercanos, la página pide los datos de esos restaurantes, nunca tu ubicación. Si no das el permiso, todo lo demás funciona igual.</li>
+    <li>Para mostrar el mapa y la lista, tu navegador descarga contenido de <strong>CARTO</strong> (el mapa), <strong>Google Fonts</strong> (la tipografía), <strong>Google Apps Script</strong> (los datos de los restaurantes) y <strong>cdnjs</strong> (código). Esos servicios reciben tu dirección IP y la zona del mapa que estás viendo, como en cualquier sitio con mapas.</li>
     <li>«Cómo llegar» y «Fotos y horario» abren <strong>Google Maps</strong>, que tiene su propia política de privacidad.</li>
-    <li>Para funcionar sin conexión, la página guarda una copia de la lista en tu dispositivo. Puedes borrarla desde la configuración de tu navegador.</li>
-    ${ratingsOn() ? `<li><strong>Si calificas un restaurante</strong>, tu voto se envía de forma anónima (solo el restaurante y el puntaje) a un formulario de Google del dueño de la página. Tu dispositivo recuerda qué calificaste para no votar dos veces.</li>` : ""}
+    <li>Para funcionar sin conexión, la página guarda en tu dispositivo una copia de lo último que viste. Puedes borrarla desde la configuración de tu navegador.</li>
+    <li><strong>Si calificas un restaurante</strong>, tu voto se guarda de forma anónima (solo el restaurante y el puntaje) en la hoja del dueño de la página. Tu dispositivo recuerda qué calificaste para no votar dos veces.</li>
     <li>Los puntajes son opiniones personales.</li>
   </ul>`;
 document.getElementById("privacy-open").addEventListener("click", () =>
   openDialog(PRIVACY_HTML, [{ label: "Entendido", primary: true }]));
 
 // ===== Calificaciones de los visitantes =====
-// Cada voto es anónimo: solo se envía el restaurante y el puntaje al formulario de Google.
+// Cada voto es anónimo: solo se envía el restaurante y el puntaje.
 // El dispositivo recuerda sus propios votos para no calificar dos veces el mismo lugar.
-const community = new Map(); // restaurante -> { sum, n }
 const myVotes = (() => { try { return JSON.parse(localStorage.getItem("mis-votos") || "{}"); } catch { return {}; } })();
 const saveVotes = () => { try { localStorage.setItem("mis-votos", JSON.stringify(myVotes)); } catch {} };
 
 function communityHTML(r) {
-  if (!ratingsOn()) return "";
-  const c = community.get(slugOf(r));
-  const mine = myVotes[slugOf(r)];
+  const c = r.community;
+  const mine = myVotes[r.slug];
   const avg = c && c.n
-    ? `Comunidad: <strong>${fmtScore(Math.round((c.sum / c.n) * 10) / 10)}</strong> · ${c.n} ${c.n === 1 ? "voto" : "votos"}`
+    ? `Comunidad: <strong>${fmtScore(c.avg)}</strong> · ${c.n} ${c.n === 1 ? "voto" : "votos"}`
     : "Aún sin votos de la comunidad";
   const action = mine
     ? `<span class="my-vote">Tu voto: ${mine}</span>`
-    : `<button type="button" class="rate" data-id="${r.id}">Califícalo</button>`;
+    : `<button type="button" class="rate" data-id="${esc(r.id)}">Califícalo</button>`;
   return `<p class="community">${avg} · ${action}</p>`;
 }
 
 const refreshOpenPopup = () => markers.forEach(m => { if (m.isPopupOpen()) m.getPopup().update(); });
 
-async function loadCommunity() {
-  if (!ratingsOn()) return;
-  const url = RATINGS.csv + (RATINGS.csv.includes("?") ? "&" : "?") + "t=" + Date.now();
-  let text = "";
-  try {
-    const res = await fetch(url, { cache: "no-store" });
-    if (!res.ok) throw new Error(res.status);
-    text = await res.text();
-  } catch {
-    try { text = await (await fetch(PROXY(url), { cache: "no-store" })).text(); } catch { return; }
-  }
-  const { data } = Papa.parse(text, { header: true, skipEmptyLines: true });
-  const known = new Set(state.all.map(slugOf));
-  community.clear();
-  for (const row of data) {
-    const slug = col(row, "restaurante");
-    const score = nums(col(row, "puntaje"))[0];
-    if (!known.has(slug) || !(score >= 1 && score <= 10)) continue; // ignora datos raros
-    const c = community.get(slug) || { sum: 0, n: 0 };
-    c.sum += score;
-    c.n++;
-    community.set(slug, c);
-  }
-  refreshOpenPopup();
-}
-
 function rate(id) {
-  const r = state.all.find(x => x.id === id);
-  if (!r || !ratingsOn()) return;
+  const r = state.places.get(id);
+  if (!r) return;
   const buttons = Array.from({ length: 10 }, (_, i) =>
     `<button type="button" class="score-btn" data-v="${i + 1}">${i + 1}</button>`).join("");
   openDialog(`
@@ -1648,23 +1298,16 @@ function rate(id) {
 }
 
 async function sendVote(r, v) {
-  const slug = slugOf(r);
-  const body = new URLSearchParams({ [RATINGS.entryRestaurant]: slug, [RATINGS.entryScore]: String(v) });
   try {
-    // Google Forms no responde a otras páginas: el envío llega aunque no podamos leer la respuesta
-    await fetch(RATINGS.formAction, { method: "POST", mode: "no-cors", body });
+    await api({ a: "vote", id: r.id, v }); // devuelve el restaurante con el promedio ya actualizado
   } catch {
-    toast("No se pudo enviar tu voto. Revisa tu conexión");
+    toast("No se pudo guardar tu voto. Intenta de nuevo");
     return;
   }
-  myVotes[slug] = v;
+  myVotes[r.slug] = v;
   saveVotes();
-  const c = community.get(slug) || { sum: 0, n: 0 };
-  c.sum += v;
-  c.n++;
-  community.set(slug, c);
   refreshOpenPopup();
-  toast("¡Gracias! Tu voto se suma al promedio en unos minutos");
+  toast("¡Gracias por calificar!");
 }
 
 // ===== Cerca de mí =====
@@ -1675,22 +1318,26 @@ const fmtDist = m => m < 950
   ? `${Math.max(50, Math.round(m / 50) * 50)} m`
   : `${(m / 1000).toFixed(m < 9500 ? 1 : 0).replace(".", ",")} km`;
 
-function showNearMe(me) {
+async function showNearMe(me) {
   const icon = L.divIcon({ className: "me", html: "<span></span>", iconSize: [18, 18] });
   if (meMarker) meMarker.setLatLng(me);
   else meMarker = L.marker(me, { icon, interactive: false, keyboard: false, zIndexOffset: 2000 }).addTo(map);
 
-  const withD = state.all.filter(r => r.lat != null).map(r => ({ r, d: me.distanceTo([r.lat, r.lng]) }));
+  const withD = state.dots.map(d => ({ id: d.id, d: me.distanceTo([d.lat, d.lng]) })).sort((a, b) => a.d - b.d);
   const radius = [1500, 3000, 6000, 12000].find(R => withD.filter(x => x.d <= R).length >= 5);
   const notes = [];
-  let pool;
-  if (radius) pool = withD.filter(x => x.d <= radius);
-  else {
-    pool = withD.sort((a, b) => a.d - b.d).slice(0, 6);
-    notes.push("No tienes restaurantes de la lista cerca; estos son los más cercanos.");
-  }
-  const dist = new Map(pool.map(x => [x.r.id, x.d]));
-  const rows = pool.map(x => x.r)
+  let pool = radius ? withD.filter(x => x.d <= radius) : withD.slice(0, 6);
+  if (!radius) notes.push("No tienes restaurantes de la lista cerca; estos son los más cercanos.");
+  pool = pool.slice(0, 12); // solo se piden los datos de los más cercanos
+  const dist = new Map(pool.map(x => [x.id, x.d]));
+
+  if (isSheet()) sheet.snap("mid");
+  showLoadingList("Buscando cerca de ti…");
+  let places;
+  try { places = (await api({ a: "places", ids: pool.map(x => x.id).join(",") })).places; }
+  catch { toast("No pude buscar ahora. Intenta de nuevo"); render(false); return; }
+
+  const rows = places
     .sort((a, b) => (b.score ?? -1) - (a.score ?? -1) || dist.get(a.id) - dist.get(b.id))
     .slice(0, 8);
   state.reco = {
@@ -1698,9 +1345,9 @@ function showNearMe(me) {
     chips: radius ? [`A menos de ${fmtDist(radius)}`] : [],
     why: r => `A ${fmtDist(dist.get(r.id))}`
   };
+  state.results = null;
   state.activeId = null;
   setAddress();
-  if (isSheet()) sheet.snap("mid");
   render(true, true);
   document.getElementById("list").scrollTop = 0;
 }
@@ -1721,7 +1368,7 @@ function locate() {
 
 // Antes de que el navegador pida permiso, se explica para qué es (una sola vez por dispositivo)
 async function nearMe() {
-  if (!state.all.length) return;
+  if (!state.dots.length) return;
   let explained = false, granted = false;
   try { explained = localStorage.getItem("ubicacion-explicada") === "1"; } catch {}
   try { granted = (await navigator.permissions?.query({ name: "geolocation" }))?.state === "granted"; } catch {}
@@ -1739,16 +1386,17 @@ document.getElementById("near").addEventListener("click", nearMe);
 
 // ===== Sorpréndeme =====
 // Elige al azar uno de los de 9 o más, preferiblemente en la zona que estás viendo en el mapa
-function surprise() {
-  if (!state.all.length) return;
-  const view = map.getBounds();
-  const top = state.all.filter(r => r.lat != null && (r.score ?? 0) >= 9);
-  const inView = top.filter(r => view.contains([r.lat, r.lng]));
-  const last = state.reco?.kind === "surprise" ? state.reco.rows[0]?.id : null;
-  const pool = (inView.length >= 3 ? inView : top).filter(r => r.id !== last);
-  if (!pool.length) return;
-  const r = pool[Math.floor(Math.random() * pool.length)];
-  state.reco = { kind: "surprise", title: "¿Qué tal este?", text: "", chips: [], notes: [], rows: [r], why: () => "" };
+async function surprise() {
+  if (!state.dots.length) return;
+  const b = map.getBounds();
+  const last = state.reco?.kind === "surprise" ? state.reco.rows[0]?.id : "";
+  let r;
+  try {
+    r = (await api({ a: "surprise", bbox: [b.getSouth(), b.getWest(), b.getNorth(), b.getEast()].map(n => n.toFixed(4)).join(","), not: last })).place;
+  } catch {}
+  if (!r) { toast("No pude elegir uno ahora. Intenta de nuevo"); return; }
+  state.reco = { kind: "surprise", title: "¿Qué tal este?", text: "", chips: [], notes: [], rows: [r] };
+  state.results = null;
   state.activeId = null;
   render(false, true);
   openRestaurant(r);

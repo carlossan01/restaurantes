@@ -1,12 +1,12 @@
 // Permite instalar la página como app y abrirla sin conexión.
 // - La página siempre se pide primero a internet (así los cambios se ven de inmediato);
 //   si no hay conexión, se usa la última copia guardada.
-// - La lista de restaurantes también va primero a internet y guarda una copia de respaldo.
+// - Los datos (del intermediario) también van primero a internet y guardan una copia de respaldo.
 // - Las librerías y tipografías (con versión fija) se guardan una vez y se reutilizan.
 // No se guarda ningún dato de quien usa la página: ni ubicación ni nada parecido.
-const SHELL = "shell-v1";
+const SHELL = "shell-v2";
 const LIBS = "libs-v1";
-const DATA = "data-v1";
+const DATA = "data-v2";
 
 self.addEventListener("install", event => {
   event.waitUntil(
@@ -45,12 +45,13 @@ self.addEventListener("fetch", event => {
     return;
   }
 
-  // La hoja de Google: internet primero, última lista guardada si no hay conexión
-  if (url.hostname === "docs.google.com" || url.hostname === "api.allorigins.win") {
+  // El intermediario: internet primero; sin conexión, la última respuesta a esa misma pregunta
+  if (url.hostname === "script.google.com" || url.hostname === "script.googleusercontent.com") {
+    if (url.searchParams.get("a") === "vote") return; // un voto nunca se responde desde la copia
     event.respondWith(
       fetch(req)
-        .then(res => (res.ok ? save(DATA, "./lista.csv", res) : res))
-        .catch(() => caches.match("./lista.csv").then(hit => hit || Response.error()))
+        .then(res => (res.ok ? save(DATA, req.url, res) : res))
+        .catch(() => caches.match(req.url).then(hit => hit || Response.error()))
     );
     return;
   }
