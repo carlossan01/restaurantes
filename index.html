@@ -6,6 +6,14 @@
 <meta name="theme-color" content="#E6E8EE" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0E1016" media="(prefers-color-scheme: dark)">
 <title>Mis restaurantes</title>
+<meta name="description" content="Mis restaurantes favoritos con puntaje, en un mapa. Dime qué se te antoja y te recomiendo dónde ir.">
+<meta property="og:type" content="website">
+<meta property="og:locale" content="es_CO">
+<meta property="og:site_name" content="Mis restaurantes">
+<meta property="og:title" content="Mis restaurantes">
+<meta property="og:description" content="Dime qué se te antoja y te recomiendo dónde ir. Puntajes, mapa y cómo llegar.">
+<meta property="og:url" content="https://carlossan01.github.io/restaurantes/">
+<meta name="twitter:card" content="summary">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -282,6 +290,17 @@
     transition: background 0.15s;
   }
   .back:hover { background: var(--fill-strong); }
+  .reco-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+
+  /* Aviso breve (por ejemplo, "Enlace copiado") */
+  #toast {
+    position: fixed; z-index: 3000; left: 50%; top: calc(16px + env(safe-area-inset-top, 0px));
+    max-width: calc(100vw - 32px); translate: -50% -12px; opacity: 0; pointer-events: none;
+    background: var(--ink); color: var(--surface); font-weight: 600; font-size: 0.9rem;
+    border-radius: 999px; padding: 10px 18px; box-shadow: var(--shadow);
+    transition: opacity 0.25s, translate 0.35s var(--ease-out);
+  }
+  #toast.show { opacity: 1; translate: -50% 0; }
 
   .empty { padding: 28px 12px; color: var(--muted); }
   .empty strong { color: var(--ink); display: block; margin-bottom: 4px; }
@@ -338,8 +357,17 @@
   .pop .ring { width: 44px; height: 44px; font-size: 0.95rem; color: var(--ink); }
   .pop h3 { margin: 0; font-size: 1.05rem; font-weight: 800; letter-spacing: -0.02em; line-height: 1.15; }
   .pop p { margin: 2px 0 0; color: var(--muted); font-size: 0.85rem; }
+  .pop-actions { grid-column: 1 / -1; display: flex; gap: 8px; margin-top: 4px; white-space: nowrap; }
+  .pop .share {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer;
+    font-size: 0.9rem; font-weight: 600; color: var(--ink);
+    background: var(--fill); border: 0; border-radius: 999px; padding: 9px 14px;
+    transition: background 0.15s, transform 0.1s ease-out;
+  }
+  .pop .share:hover { background: var(--fill-strong); }
+  .pop .share:active, .pop .dir:active { transform: scale(0.96); }
   .pop .dir {
-    grid-column: 1 / -1; margin-top: 4px; text-align: center; text-decoration: none;
+    flex: 1; text-align: center; text-decoration: none;
     background: var(--accent); color: var(--accent-ink); font-weight: 600; font-size: 0.9rem;
     border-radius: 999px; padding: 9px 14px; transition: filter 0.15s;
   }
@@ -385,6 +413,7 @@
 </head>
 <body>
 <div id="map" role="region" aria-label="Mapa de restaurantes"></div>
+<div id="toast" role="status" aria-live="polite"></div>
 
 <aside id="panel" aria-label="Restaurantes">
   <div class="hero">
@@ -904,15 +933,103 @@ function popupHTML(r) {
       ${r.style ? `<p>${esc(r.style)}</p>` : ""}
       ${r.location ? `<p>${esc(r.location)}</p>` : ""}
     </div>
-    <a class="dir" href="${dir}" target="_blank" rel="noopener">Cómo llegar</a>
+    <div class="pop-actions">
+      <a class="dir" href="${dir}" target="_blank" rel="noopener">Cómo llegar</a>
+      <button type="button" class="share" data-id="${r.id}">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 8 5-5 5 5"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg>
+        Compartir
+      </button>
+    </div>
   </div>`;
+}
+
+// ===== Compartir y enlaces directos =====
+// Cada restaurante tiene un enlace propio: ?r=nombre-ciudad. Una recomendación: ?q=texto
+const slugOf = r => norm(`${r.name} ${r.city}`).replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+function linkFor(params) {
+  const u = new URL(location.href);
+  u.search = "";
+  u.hash = "";
+  for (const [k, v] of Object.entries(params || {})) u.searchParams.set(k, v);
+  return u.toString();
+}
+// Mantiene la barra de direcciones al día, para que copiarla también sirva para compartir
+const setAddress = params => { try { history.replaceState(null, "", linkFor(params)); } catch {} };
+
+let toastTimer;
+function toast(text) {
+  const el = document.getElementById("toast");
+  el.textContent = text;
+  el.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove("show"), 2600);
+}
+
+// En el celular abre el menú de compartir del teléfono (WhatsApp, etc.); en el computador copia el enlace
+async function shareLink(title, text, url) {
+  if (navigator.share && matchMedia("(pointer: coarse)").matches) {
+    try { await navigator.share({ title, text, url }); } catch {}
+    return;
+  }
+  const content = `${text}\n${url}`;
+  let ok = false;
+  try { await navigator.clipboard.writeText(content); ok = true; } catch {}
+  if (!ok) {
+    // Plan B para navegadores que no dan permiso al portapapeles
+    const ta = Object.assign(document.createElement("textarea"), { value: content });
+    ta.style.cssText = "position:fixed;opacity:0;top:0;left:0";
+    document.body.appendChild(ta);
+    ta.select();
+    try { ok = document.execCommand("copy"); } catch {}
+    ta.remove();
+  }
+  toast(ok ? "Enlace copiado. Pégalo donde quieras compartirlo" : "No se pudo copiar. Copia la dirección de la barra del navegador");
+}
+
+function shareRestaurant(id) {
+  const r = state.all.find(x => x.id === id);
+  if (!r) return;
+  const what = [r.style, r.city].filter(Boolean).join(", ");
+  const score = r.score != null ? ` Tiene ${fmtScore(r.score)}/10.` : "";
+  shareLink(r.name, `${r.name}${what ? ` (${what})` : ""}.${score} Míralo en Mis restaurantes:`, linkFor({ r: slugOf(r) }));
+}
+
+function openRestaurant(r) {
+  highlight(r.id, true);
+  const m = markers.get(r.id);
+  if (!m) return;
+  if (isSheet()) sheet.snap("peek");
+  focusPin(m);
+}
+
+// Abre lo que venga en el enlace (un restaurante o una recomendación), una sola vez
+let deepLinkDone = false;
+function handleDeepLink() {
+  if (deepLinkDone || !state.all.length) return;
+  deepLinkDone = true;
+  const p = new URLSearchParams(location.search);
+  const q = p.get("q"), slug = p.get("r");
+  if (q) { document.getElementById("ask-q").value = q; ask(q); }
+  else if (slug) {
+    const r = state.all.find(x => slugOf(x) === slug);
+    const m = r && markers.get(r.id);
+    if (!m) { toast("Ese restaurante ya no está en la lista"); return; }
+    // Salta directo al restaurante, sin el vuelo de bienvenida sobre la ciudad
+    highlight(r.id, true);
+    if (isSheet()) sheet.snap("peek");
+    map.stop();
+    const c = covered(), z = 17;
+    const p = map.project(m.getLatLng(), z).add([-c.left / 2, c.bottom / 2]);
+    map.setView(map.unproject(p, z), z, { animate: false });
+    layer.zoomToShowLayer(m, () => m.openPopup());
+  }
 }
 
 // La ficha se acomoda para no quedar debajo del panel
 function popupOptions() {
   const c = isSheet() ? { left: 0, bottom: sheet.peekHeight() } : covered();
   return {
-    maxWidth: 300, minWidth: 240,
+    maxWidth: 320, minWidth: 270,
     autoPanPaddingTopLeft: L.point(c.left + 16, 16),
     autoPanPaddingBottomRight: L.point(16, c.bottom + 16)
   };
@@ -925,12 +1042,18 @@ function recoHeader(reco) {
     <h2>Te recomiendo</h2>
     ${reco.chips.length ? `<div class="chips">${reco.chips.map((c, i) => `<span style="--d:${i * 50}ms">${esc(c)}</span>`).join("")}</div>` : ""}
     ${reco.notes.map(n => `<p class="note">${esc(n)}</p>`).join("")}
-    <button type="button" class="back">Ver todos los restaurantes</button>`;
+    <div class="reco-actions">
+      <button type="button" class="back">Ver todos los restaurantes</button>
+      <button type="button" class="back share-reco">Compartir</button>
+    </div>`;
   head.querySelector(".back").addEventListener("click", () => {
     state.reco = null;
     document.getElementById("ask-q").value = "";
+    setAddress();
     render(true, true);
   });
+  head.querySelector(".share-reco").addEventListener("click", () =>
+    shareLink("Mis restaurantes", `Recomendaciones para “${reco.text}”:`, linkFor({ q: reco.text })));
   return head;
 }
 
@@ -982,7 +1105,7 @@ function render(fit, animate = !painted) {
   const frag = document.createDocumentFragment();
   rows.forEach((r, i) => {
     if (r.lat != null) {
-      const m = L.marker([r.lat, r.lng], { icon: pinIcon(r), title: r.name }).bindPopup(popupHTML(r), popOpts);
+      const m = L.marker([r.lat, r.lng], { icon: pinIcon(r), title: r.name, rid: r.id }).bindPopup(popupHTML(r), popOpts);
       m.on("click", () => {
         highlight(r.id, true);
         if (isSheet()) sheet.snap("peek");
@@ -1003,13 +1126,7 @@ function render(fit, animate = !painted) {
         ${state.reco && state.reco.why(r) ? `<span class="why">${esc(state.reco.why(r))}</span>` : ""}
         ${r.lat == null ? `<span class="nopin">Sin coordenadas en la hoja</span>` : ""}
       </span>`;
-    b.addEventListener("click", () => {
-      highlight(r.id, false);
-      const m = markers.get(r.id);
-      if (!m) return;
-      if (isSheet()) sheet.snap("peek");
-      focusPin(m);
-    });
+    b.addEventListener("click", () => openRestaurant(r));
     b.addEventListener("pointerenter", () => liftPin(r.id));
     b.addEventListener("pointerleave", () => liftPin(null));
     b.addEventListener("focus", () => liftPin(r.id));
@@ -1137,9 +1254,22 @@ function ask(text) {
   state.activeId = null;
   document.getElementById("ask-q").blur();
   if (isSheet()) sheet.snap("mid");
+  setAddress({ q: text });
   render(true, true);
   document.getElementById("list").scrollTop = 0;
 }
+
+// Botón "Compartir" dentro de la ficha del mapa (Leaflet frena los clics, por eso se escucha en captura)
+document.getElementById("map").addEventListener("click", e => {
+  const b = e.target.closest(".share");
+  if (b) shareRestaurant(Number(b.dataset.id));
+}, true);
+// La dirección refleja el restaurante abierto
+map.on("popupopen", e => {
+  const r = state.all.find(x => x.id === e.popup._source?.options.rid);
+  if (r) setAddress({ r: slugOf(r) });
+});
+map.on("popupclose", () => setAddress(state.reco ? { q: state.reco.text } : undefined));
 document.getElementById("ask").addEventListener("submit", e => {
   e.preventDefault();
   ask(document.getElementById("ask-q").value);
@@ -1188,6 +1318,7 @@ const refreshBtn = document.getElementById("refresh");
 async function reload() {
   refreshBtn.classList.add("spin");
   try { await load(); } finally { refreshBtn.classList.remove("spin"); }
+  handleDeepLink();
 }
 refreshBtn.addEventListener("click", reload);
 
