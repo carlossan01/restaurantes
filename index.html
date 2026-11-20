@@ -13,9 +13,17 @@
 <meta property="og:title" content="Mis restaurantes">
 <meta property="og:description" content="Dime qué se te antoja y te recomiendo dónde ir. Puntajes, mapa y cómo llegar.">
 <meta property="og:url" content="https://carlossan01.github.io/restaurantes/">
-<meta name="twitter:card" content="summary">
+<meta name="twitter:card" content="summary_large_image">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.css">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Restaurantes">
+<meta property="og:image" content="https://carlossan01.github.io/restaurantes/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&display=swap" rel="stylesheet">
@@ -140,13 +148,15 @@
   }
   h1 { margin: 0; font-size: 0.98rem; font-weight: 800; letter-spacing: -0.01em; line-height: 1.2; }
   #status { margin: 1px 0 0; color: var(--hero-muted); font-size: 0.8rem; }
-  #refresh {
+  .head-actions { display: flex; gap: 2px; }
+  #refresh, #install {
     flex: none; width: 36px; height: 36px;
     display: grid; place-items: center; border: 0; border-radius: 50%;
     background: none; color: var(--hero-muted); cursor: pointer;
     transition: background 0.15s, color 0.15s;
   }
-  #refresh:hover { background: var(--hero-chip); color: var(--hero-ink); }
+  #refresh:hover, #install:hover { background: var(--hero-chip); color: var(--hero-ink); }
+  #install[hidden] { display: none; }
   #refresh.spin svg { animation: spin 0.9s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
 
@@ -190,6 +200,13 @@
     transition: background 0.15s, transform 0.1s ease-out;
   }
   .examples button:hover { background: var(--hero-chip-hover); }
+  .examples .chip-action {
+    display: inline-flex; align-items: center; gap: 6px; font-weight: 600;
+    background: var(--hero-field); color: var(--hero-go);
+  }
+  .examples .chip-action:hover { background: var(--hero-field); filter: brightness(0.94); }
+  .chip-action.busy { opacity: 0.6; pointer-events: none; }
+  .chip-action.busy svg { animation: spin 0.9s linear infinite; }
   .examples button:active { transform: scale(0.95); }
 
   /* ===== Buscar y filtrar ===== */
@@ -292,6 +309,35 @@
   .back:hover { background: var(--fill-strong); }
   .reco-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 
+  /* Tu ubicación en el mapa (solo existe en tu pantalla) */
+  .me { background: none; border: 0; }
+  .me span {
+    display: block; width: 18px; height: 18px; border-radius: 50%;
+    background: #1D3BD1; border: 3px solid #fff; box-shadow: 0 0 0 0 rgba(29, 59, 209, 0.45);
+    animation: me-pulse 2.2s ease-out infinite;
+  }
+  @keyframes me-pulse { 70% { box-shadow: 0 0 0 16px rgba(29, 59, 209, 0); } 100% { box-shadow: 0 0 0 0 rgba(29, 59, 209, 0); } }
+
+  /* Pie del panel y ventanas de aviso */
+  .foot { padding: 8px 22px 12px; border-top: 1px solid var(--line); font-size: 0.78rem; color: var(--muted); }
+  .foot button { font-size: inherit; color: var(--muted); background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; }
+  dialog {
+    border: 0; border-radius: 20px; padding: 22px; width: min(440px, calc(100vw - 32px));
+    background: var(--surface); color: var(--ink); box-shadow: var(--shadow);
+  }
+  dialog[open] { animation: pop-in 0.24s var(--ease-out); }
+  dialog::backdrop { background: rgba(14, 18, 32, 0.45); }
+  dialog h2 { margin: 0 0 10px; font-size: 1.25rem; font-weight: 800; letter-spacing: -0.02em; }
+  dialog p, dialog li { margin: 0 0 8px; color: var(--muted); font-size: 0.92rem; line-height: 1.45; }
+  dialog ul { margin: 0 0 8px; padding-left: 18px; }
+  dialog strong { color: var(--ink); }
+  .dlg-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+  .dlg-actions button {
+    font-weight: 600; cursor: pointer; border: 0; border-radius: 999px; padding: 9px 16px;
+    background: var(--fill); color: var(--ink);
+  }
+  .dlg-actions button.primary { background: var(--accent); color: var(--accent-ink); }
+
   /* Aviso breve (por ejemplo, "Enlace copiado") */
   #toast {
     position: fixed; z-index: 3000; left: 50%; top: calc(16px + env(safe-area-inset-top, 0px));
@@ -357,7 +403,15 @@
   .pop .ring { width: 44px; height: 44px; font-size: 0.95rem; color: var(--ink); }
   .pop h3 { margin: 0; font-size: 1.05rem; font-weight: 800; letter-spacing: -0.02em; line-height: 1.15; }
   .pop p { margin: 2px 0 0; color: var(--muted); font-size: 0.85rem; }
-  .pop-actions { grid-column: 1 / -1; display: flex; gap: 8px; margin-top: 4px; white-space: nowrap; }
+  .pop-actions { grid-column: 1 / -1; display: grid; gap: 8px; margin-top: 4px; white-space: nowrap; }
+  .pop-more { display: flex; gap: 8px; }
+  .pop-more > * { flex: 1; }
+  .pop .more {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px; text-decoration: none;
+    font-size: 0.9rem; font-weight: 600; color: var(--ink);
+    background: var(--fill); border-radius: 999px; padding: 9px 14px; transition: background 0.15s;
+  }
+  .pop .more:hover { background: var(--fill-strong); }
   .pop .share {
     display: inline-flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer;
     font-size: 0.9rem; font-weight: 600; color: var(--ink);
@@ -395,6 +449,7 @@
     .tools { padding: 12px 18px 10px; }
     input[type=search], select { font-size: 16px; }
     #list { padding: 4px 8px 16px; }
+    .foot { padding: 8px 18px 12px; }
     .leaflet-control-zoom { display: none; }
     .leaflet-bottom.leaflet-right { top: 0; bottom: auto; }
     .leaflet-control-attribution.leaflet-control { border-radius: 0 0 0 8px; }
@@ -424,9 +479,14 @@
         <h1>Mis restaurantes</h1>
         <p id="status">Cargando la hoja…</p>
       </div>
-      <button type="button" id="refresh" aria-label="Actualizar datos de la hoja" title="Actualizar">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
-      </button>
+      <div class="head-actions">
+        <button type="button" id="install" hidden aria-label="Instalar como app" title="Instalar como app">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+        </button>
+        <button type="button" id="refresh" aria-label="Actualizar datos de la hoja" title="Actualizar">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+        </button>
+      </div>
     </header>
   </div>
 
@@ -439,6 +499,14 @@
       </button>
     </div>
     <div class="examples" aria-label="Ejemplos">
+      <button type="button" class="chip-action" id="near">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg>
+        Cerca de mí
+      </button>
+      <button type="button" class="chip-action" id="surprise">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="3.5" width="17" height="17" rx="4"/><circle cx="8.5" cy="8.5" r="1.2" fill="currentColor"/><circle cx="15.5" cy="15.5" r="1.2" fill="currentColor"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/></svg>
+        Sorpréndeme
+      </button>
       <button type="button">Sushi hasta 80 mil</button>
       <button type="button">Algo dulce en Bogotá</button>
       <button type="button">Carne para 4 con 300 mil</button>
@@ -493,7 +561,9 @@
   <div id="list" aria-live="polite">
     <div class="sk"></div><div class="sk"></div><div class="sk"></div><div class="sk"></div><div class="sk"></div>
   </div>
+  <div class="foot">Puntajes personales. <button type="button" id="privacy-open">Privacidad y ubicación</button></div>
 </aside>
+<dialog id="dlg"></dialog>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.js"></script>
@@ -579,6 +649,7 @@ function covered() {
 // Encuadra la zona con más restaurantes (radio de 25 km) en lugar del mundo entero
 function fitView(rows) {
   const pts = rows.filter(r => r.lat != null).map(r => L.latLng(r.lat, r.lng));
+  if (state.reco?.me) pts.push(state.reco.me); // "Cerca de mí": que se vea dónde estás
   if (!pts.length) return;
   let group = pts;
   if (pts.length > 1) {
@@ -899,7 +970,7 @@ async function load() {
     const headers = grid[h];
     const rows = grid.slice(h + 1).map(r => Object.fromEntries(headers.map((k, i) => [k || `col${i}`, r[i] ?? ""])));
     state.all = applyFixes(rows.map(parseRow).filter(Boolean));
-    if (state.reco) state.reco = recommend(state.reco.text);
+    if (state.reco && !state.reco.kind) state.reco = recommend(state.reco.text);
     buildFilters();
     render(true);
     const time = new Date().toLocaleTimeString("es-CO", { hour: "numeric", minute: "2-digit" });
@@ -926,7 +997,7 @@ function updateStatus(shown) {
   const noPin = state.all.filter(r => r.lat == null).length;
   let txt = state.reco ? `${n} ${n === 1 ? "recomendación" : "recomendaciones"} de ${total}`
     : n === total ? `${total} restaurantes` : `${n} de ${total} restaurantes`;
-  if (noPin) txt += `, ${noPin} sin coordenadas`;
+  if (noPin) txt += `, ${noPin} sin ubicación`;
   setStatus(txt);
   if (state.loadedAt) document.getElementById("refresh").title = `Datos de las ${state.loadedAt}. Toca para actualizar`;
 }
@@ -983,6 +1054,7 @@ function filtered() {
 
 function popupHTML(r) {
   const dir = `https://www.google.com/maps/dir/?api=1&destination=${r.lat},${r.lng}`;
+  const gm = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent([r.name, r.location].filter(Boolean).join(", "))}`;
   return `<div class="pop">
     ${ringHTML(r)}
     <div>
@@ -992,10 +1064,16 @@ function popupHTML(r) {
     </div>
     <div class="pop-actions">
       <a class="dir" href="${dir}" target="_blank" rel="noopener">Cómo llegar</a>
+      <div class="pop-more">
+      <a class="more" href="${gm}" target="_blank" rel="noopener" title="Abre el restaurante en Google Maps">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="15" rx="3"/><circle cx="12" cy="12.5" r="3.5"/><path d="M8 5l1.5-2h5L16 5"/></svg>
+        Fotos y horario
+      </a>
       <button type="button" class="share" data-id="${r.id}">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 8 5-5 5 5"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg>
         Compartir
       </button>
+      </div>
     </div>
   </div>`;
 }
@@ -1097,20 +1175,22 @@ function recoHeader(reco) {
   const head = document.createElement("div");
   head.className = "reco-head";
   head.innerHTML = `
-    <h2>Te recomiendo</h2>
+    <h2>${esc(reco.title || "Te recomiendo")}</h2>
     ${reco.chips.length ? `<div class="chips">${reco.chips.map((c, i) => `<span style="--d:${i * 50}ms">${esc(c)}</span>`).join("")}</div>` : ""}
     ${reco.notes.map(n => `<p class="note">${esc(n)}</p>`).join("")}
     <div class="reco-actions">
-      <button type="button" class="back">Ver todos los restaurantes</button>
-      <button type="button" class="back share-reco">Compartir</button>
+      ${reco.kind === "surprise" ? `<button type="button" class="back again">Otro</button>` : ""}
+      <button type="button" class="back all">Ver todos los restaurantes</button>
+      ${reco.kind ? "" : `<button type="button" class="back share-reco">Compartir</button>`}
     </div>`;
-  head.querySelector(".back").addEventListener("click", () => {
+  head.querySelector(".again")?.addEventListener("click", surprise);
+  head.querySelector(".all").addEventListener("click", () => {
     state.reco = null;
     document.getElementById("ask-q").value = "";
     setAddress();
     render(true, true);
   });
-  head.querySelector(".share-reco").addEventListener("click", () =>
+  head.querySelector(".share-reco")?.addEventListener("click", () =>
     shareLink("Mis restaurantes", `Recomendaciones para “${reco.text}”:`, linkFor({ q: reco.text })));
   return head;
 }
@@ -1327,12 +1407,12 @@ map.on("popupopen", e => {
   const r = state.all.find(x => x.id === e.popup._source?.options.rid);
   if (r) setAddress({ r: slugOf(r) });
 });
-map.on("popupclose", () => setAddress(state.reco ? { q: state.reco.text } : undefined));
+map.on("popupclose", () => setAddress(state.reco?.text ? { q: state.reco.text } : undefined));
 document.getElementById("ask").addEventListener("submit", e => {
   e.preventDefault();
   ask(document.getElementById("ask-q").value);
 });
-document.querySelectorAll(".examples button").forEach(b => b.addEventListener("click", () => {
+document.querySelectorAll(".examples button:not(.chip-action)").forEach(b => b.addEventListener("click", () => {
   document.getElementById("ask-q").value = b.textContent;
   ask(b.textContent);
 }));
@@ -1379,6 +1459,140 @@ async function reload() {
   handleDeepLink();
 }
 refreshBtn.addEventListener("click", reload);
+
+// ===== Ventanas de aviso =====
+const dlg = document.getElementById("dlg");
+function openDialog(html, actions) {
+  dlg.innerHTML = `${html}<div class="dlg-actions"></div>`;
+  const bar = dlg.querySelector(".dlg-actions");
+  for (const a of actions) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = a.label;
+    if (a.primary) b.className = "primary";
+    b.addEventListener("click", () => { dlg.close(); a.onClick?.(); });
+    bar.appendChild(b);
+  }
+  dlg.showModal();
+}
+dlg.addEventListener("click", e => { if (e.target === dlg) dlg.close(); }); // tocar afuera cierra
+
+const PRIVACY_HTML = `
+  <h2>Privacidad y ubicación</h2>
+  <ul>
+    <li><strong>Sin cuentas, sin cookies y sin contador de visitas.</strong> Esta página no recoge datos de quien la usa.</li>
+    <li><strong>Tu ubicación</strong> solo se usa si tocas «Cerca de mí», y tu navegador te pide permiso antes. Se usa dentro de tu dispositivo para medir distancias: no se guarda ni se envía a ningún servidor. Si no das el permiso, todo lo demás funciona igual.</li>
+    <li>Para mostrar el mapa y la lista, tu navegador descarga contenido de <strong>CARTO</strong> (el mapa), <strong>Google Fonts</strong> (la tipografía), <strong>Google Sheets</strong> (la lista) y <strong>cdnjs</strong> (código). Esos servicios reciben tu dirección IP y la zona del mapa que estás viendo, como en cualquier sitio con mapas.</li>
+    <li>«Cómo llegar» y «Fotos y horario» abren <strong>Google Maps</strong>, que tiene su propia política de privacidad.</li>
+    <li>Para funcionar sin conexión, la página guarda una copia de la lista en tu dispositivo. Puedes borrarla desde la configuración de tu navegador.</li>
+    <li>Los puntajes y comentarios son opiniones personales.</li>
+  </ul>`;
+document.getElementById("privacy-open").addEventListener("click", () =>
+  openDialog(PRIVACY_HTML, [{ label: "Entendido", primary: true }]));
+
+// ===== Cerca de mí =====
+// La ubicación se pide solo al tocar el botón, se usa en memoria para calcular distancias
+// y nunca se guarda, ni se pone en el enlace, ni se manda a ningún servidor.
+let meMarker = null;
+const fmtDist = m => m < 950
+  ? `${Math.max(50, Math.round(m / 50) * 50)} m`
+  : `${(m / 1000).toFixed(m < 9500 ? 1 : 0).replace(".", ",")} km`;
+
+function showNearMe(me) {
+  const icon = L.divIcon({ className: "me", html: "<span></span>", iconSize: [18, 18] });
+  if (meMarker) meMarker.setLatLng(me);
+  else meMarker = L.marker(me, { icon, interactive: false, keyboard: false, zIndexOffset: 2000 }).addTo(map);
+
+  const withD = state.all.filter(r => r.lat != null).map(r => ({ r, d: me.distanceTo([r.lat, r.lng]) }));
+  const radius = [1500, 3000, 6000, 12000].find(R => withD.filter(x => x.d <= R).length >= 5);
+  const notes = [];
+  let pool;
+  if (radius) pool = withD.filter(x => x.d <= radius);
+  else {
+    pool = withD.sort((a, b) => a.d - b.d).slice(0, 6);
+    notes.push("No tienes restaurantes de la lista cerca; estos son los más cercanos.");
+  }
+  const dist = new Map(pool.map(x => [x.r.id, x.d]));
+  const rows = pool.map(x => x.r)
+    .sort((a, b) => (b.score ?? -1) - (a.score ?? -1) || dist.get(a.id) - dist.get(b.id))
+    .slice(0, 8);
+  state.reco = {
+    kind: "near", title: "Cerca de ti", text: "", notes, rows, me,
+    chips: radius ? [`A menos de ${fmtDist(radius)}`] : [],
+    why: r => `A ${fmtDist(dist.get(r.id))}`
+  };
+  state.activeId = null;
+  setAddress();
+  if (isSheet()) sheet.snap("mid");
+  render(true, true);
+  document.getElementById("list").scrollTop = 0;
+}
+
+function locate() {
+  const btn = document.getElementById("near");
+  if (!navigator.geolocation) { toast("Este navegador no permite usar la ubicación"); return; }
+  btn.classList.add("busy");
+  navigator.geolocation.getCurrentPosition(
+    pos => { btn.classList.remove("busy"); showNearMe(L.latLng(pos.coords.latitude, pos.coords.longitude)); },
+    err => {
+      btn.classList.remove("busy");
+      toast(err.code === 1 ? "Sin permiso de ubicación. Puedes activarlo en tu navegador" : "No pude obtener tu ubicación. Intenta de nuevo");
+    },
+    { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 }
+  );
+}
+
+// Antes de que el navegador pida permiso, se explica para qué es (una sola vez por dispositivo)
+async function nearMe() {
+  if (!state.all.length) return;
+  let explained = false, granted = false;
+  try { explained = localStorage.getItem("ubicacion-explicada") === "1"; } catch {}
+  try { granted = (await navigator.permissions?.query({ name: "geolocation" }))?.state === "granted"; } catch {}
+  if (explained || granted) { locate(); return; }
+  openDialog(`
+    <h2>Restaurantes cerca de ti</h2>
+    <p>Tu navegador te va a pedir permiso para usar tu ubicación.</p>
+    <p><strong>Solo se usa en este dispositivo</strong> para calcular qué restaurantes tienes cerca. No se guarda ni se envía a ningún lado.</p>`,
+    [
+      { label: "Ahora no" },
+      { label: "Continuar", primary: true, onClick: () => { try { localStorage.setItem("ubicacion-explicada", "1"); } catch {} locate(); } }
+    ]);
+}
+document.getElementById("near").addEventListener("click", nearMe);
+
+// ===== Sorpréndeme =====
+// Elige al azar uno de los de 9 o más, preferiblemente en la zona que estás viendo en el mapa
+function surprise() {
+  if (!state.all.length) return;
+  const view = map.getBounds();
+  const top = state.all.filter(r => r.lat != null && (r.score ?? 0) >= 9);
+  const inView = top.filter(r => view.contains([r.lat, r.lng]));
+  const last = state.reco?.kind === "surprise" ? state.reco.rows[0]?.id : null;
+  const pool = (inView.length >= 3 ? inView : top).filter(r => r.id !== last);
+  if (!pool.length) return;
+  const r = pool[Math.floor(Math.random() * pool.length)];
+  state.reco = { kind: "surprise", title: "¿Qué tal este?", text: "", chips: [], notes: [], rows: [r], why: () => "" };
+  state.activeId = null;
+  render(false, true);
+  openRestaurant(r);
+}
+document.getElementById("surprise").addEventListener("click", surprise);
+
+// ===== App instalable y modo sin conexión =====
+if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")) {
+  navigator.serviceWorker.register("./sw.js").catch(() => {});
+}
+let installEvent = null;
+const installBtn = document.getElementById("install");
+addEventListener("beforeinstallprompt", e => { e.preventDefault(); installEvent = e; installBtn.hidden = false; });
+installBtn.addEventListener("click", async () => {
+  if (!installEvent) return;
+  installEvent.prompt();
+  await installEvent.userChoice.catch(() => {});
+  installEvent = null;
+  installBtn.hidden = true;
+});
+addEventListener("appinstalled", () => { installBtn.hidden = true; toast("Listo: ya la tienes como app"); });
 
 sheet.sync();
 reload();
