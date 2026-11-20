@@ -610,6 +610,63 @@ const state = { all: [], city: "", style: "", score: "", q: "", sort: "score", a
 const markers = new Map();
 let pendingFly = null;
 
+// ===== Correcciones de ubicación =====
+// Ubicaciones verificadas en Google Maps (noviembre de 2026) para restaurantes cuya hoja tenía
+// una dirección de relleno o aproximada. Cada corrección solo se aplica mientras la hoja conserve
+// el valor viejo ("from"): si actualizas ese restaurante en la hoja, manda lo que pongas allá.
+// "to": coordenadas nuevas (null quita el pin) · "place": dirección a mostrar · "note": aviso en la lista
+const FIXES = {
+  "avemaria": {"from": [4.1491688, -73.6285475], "to": [4.1735671, -73.6431215]},
+  "rancho mx": {"from": [4.9187217, -74.02255699999999], "to": [4.9102103, -74.0198305]},
+  "oriente restaurante": {"from": [5.0445905, -73.7967966], "to": [4.9733576, -73.8158762]},
+  "bruce": {"from": [4.666214099999999, -74.05561089999999], "to": [4.6658416, -74.0557977]},
+  "happy monkey": {"from": [5.6344541, -73.523561], "to": [5.6328061, -73.5218456]},
+  "san cholao": {"from": [3.4516467, -76.5319854], "to": [3.4237721, -76.5384946]},
+  "casa de san isidro": {"from": [4.6056728, -74.0555255], "to": [4.6041108, -74.0552602]},
+  "milatto": {"from": [4.604964, -74.109122], "to": [4.6936663, -74.0592829], "place": "Cl. 105 #48-39"},
+  "kumeko tei": {"from": [4.604964, -74.109122], "to": [4.6477467, -74.0571647], "place": "Chapinero"},
+  "semolina": {"from": [4.885186399999999, -74.034815], "to": [4.8831232, -74.0349793]},
+  "mikela": {"from": [4.9187217, -74.02255699999999], "to": [4.9040398, -74.0301461]},
+  "ceviche fusion": {"from": [4.698264600000001, -74.05470590000002], "to": [4.6985182, -74.0547635], "place": "Calle 122 #15-28"},
+  "sabor llanero": {"from": [4.666848, -74.05257259999999], "to": [4.6667768, -74.052699]},
+  "queseria de mi sin ti": {"from": [4.8082492, -74.0920379], "to": [4.8006891, -74.0979709]},
+  "el tambor": {"from": [4.9099886, -74.0183873], "to": [4.9096482, -74.0175363]},
+  "quero arepa": {"from": [10.4265316, -75.5460405], "to": [10.426483, -75.5460936]},
+  "shoyu": {"from": null, "to": [4.6511544, -74.0553623]},
+  "myriam camhi": {"from": [4.604964, -74.109122], "to": [4.676967, -74.0501329], "place": "Chicó"},
+  "el carnero": {"from": [4.604964, -74.109122], "to": [4.667523, -74.0124038], "place": "Vía La Calera km 6"},
+  "el templo del te": {"from": [4.604964, -74.109122], "to": [4.6443628, -74.0580341], "place": "Chapinero"},
+  "mooi": {"from": [4.604964, -74.109122], "to": [4.6476034, -74.0610263], "place": "Chapinero"},
+  "boleo": {"from": [4.604964, -74.109122], "to": [4.7329452, -74.0663631], "place": "CC Parque La Colina"},
+  "longos": {"from": [4.604964, -74.109122], "to": [4.6750352, -74.0487508], "place": "Calle 93"},
+  "sipote": {"from": [4.6009486, -74.07726459999999], "to": [4.7024319, -74.0420255], "place": "CC Unicentro"},
+  "panaderia kuty": {"from": [3.4516467, -76.5319854], "to": [3.4689084, -76.5289231], "place": "Avenida Sexta"},
+  "chef burguer": {"from": [3.4516467, -76.5319854], "to": [3.4125651, -76.5488237], "place": "C.C. Mall Plaza", "city": "Cali"},
+  "octaba": {"from": [4.604964, -74.109122], "to": null, "place": "", "note": "Sin ubicación confirmada"},
+  "stromboli": {"from": [4.604964, -74.109122], "to": null, "place": "", "note": "Sin ubicación confirmada"},
+  "mi res": {"from": [4.604964, -74.109122], "to": null, "place": "", "note": "Sin ubicación confirmada"},
+  "dos del alma": {"from": [4.9099886, -74.0183873], "to": null, "note": "Sin ubicación confirmada"},
+  "franui": {"from": [4.710988599999999, -74.072092], "to": null, "note": "Solo a domicilio"},
+  "tio mao": {"from": [4.710988599999999, -74.072092], "to": null, "note": "Solo a domicilio"},
+};
+
+function applyFixes(list) {
+  const same = (a, b) => (a == null && b == null) || (a != null && b != null && Math.abs(a - b) < 1e-5);
+  for (const r of list) {
+    const f = FIXES[norm(r.name)];
+    if (!f) continue;
+    const [fLat, fLng] = f.from || [null, null];
+    if (!same(r.lat, fLat) || !same(r.lng, fLng)) continue;
+    r.lat = f.to ? f.to[0] : null;
+    r.lng = f.to ? f.to[1] : null;
+    if (f.city) r.city = f.city;
+    if (f.place != null) r.location = [f.place, r.city].filter(Boolean).join(", ");
+    if (f.note) r.note = f.note;
+    r.search = norm(`${r.name} ${r.style} ${r.location}`);
+  }
+  return list;
+}
+
 // ===== Datos =====
 function parseRow(row, i) {
   const name = col(row, "restaurante", "nombre");
@@ -841,7 +898,7 @@ async function load() {
     if (h < 0) throw new Error("No se encontró la fila de encabezados");
     const headers = grid[h];
     const rows = grid.slice(h + 1).map(r => Object.fromEntries(headers.map((k, i) => [k || `col${i}`, r[i] ?? ""])));
-    state.all = rows.map(parseRow).filter(Boolean);
+    state.all = applyFixes(rows.map(parseRow).filter(Boolean));
     if (state.reco) state.reco = recommend(state.reco.text);
     buildFilters();
     render(true);
@@ -1125,7 +1182,7 @@ function render(fit, animate = !painted) {
         <span class="name">${esc(r.name)}</span>
         <span class="meta">${esc([r.style, r.location].filter(Boolean).join(", "))}</span>
         ${state.reco && state.reco.why(r) ? `<span class="why">${esc(state.reco.why(r))}</span>` : ""}
-        ${r.lat == null ? `<span class="nopin">Sin coordenadas en la hoja</span>` : ""}
+        ${r.lat == null ? `<span class="nopin">${esc(r.note || "Sin ubicación en el mapa")}</span>` : ""}
       </span>`;
     b.addEventListener("click", () => openRestaurant(r));
     b.addEventListener("pointerenter", () => liftPin(r.id));
