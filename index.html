@@ -348,6 +348,24 @@
   }
   #toast.show { opacity: 1; translate: -50% 0; }
 
+  /* Bienvenida: en lugar de la lista completa, invita a interactuar */
+  .teaser { padding: 20px 12px 8px; }
+  .teaser-big { margin: 0 0 4px; font-size: 1.65rem; font-weight: 800; letter-spacing: -0.03em; line-height: 1.1; color: var(--ink); }
+  .teaser > p { margin: 0 0 16px; color: var(--muted); }
+  .teaser-how { display: grid; gap: 8px; }
+  .teaser-how button {
+    display: grid; grid-template-columns: 36px 1fr; gap: 12px; align-items: center; text-align: left;
+    width: 100%; cursor: pointer; border: 0; border-radius: 14px; padding: 12px 14px;
+    background: var(--fill); color: var(--muted); font-size: 0.92rem; line-height: 1.35;
+    transition: background 0.15s, transform 0.1s ease-out;
+  }
+  .teaser-how button:hover { background: var(--fill-strong); }
+  .teaser-how button:active { transform: scale(0.98); }
+  .teaser-how strong { display: block; color: var(--ink); font-size: 0.98rem; }
+  .teaser-how .ico {
+    width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center;
+    background: var(--accent-soft); color: var(--accent);
+  }
   .empty { padding: 28px 12px; color: var(--muted); }
   .empty strong { color: var(--ink); display: block; margin-bottom: 4px; }
   .empty button {
@@ -378,6 +396,13 @@
     box-shadow: 0 0 0 5px var(--cluster-halo), 0 2px 8px rgba(14, 18, 32, 0.18);
     transition: transform 0.25s var(--ease-out);
   }
+  /* Punto sin puntaje: el detalle aparece al tocarlo */
+  .dot { background: none; border: 0; }
+  .dot span {
+    display: block; width: 100%; height: 100%; border-radius: 50%;
+    background: var(--p-top); border: 2.5px solid #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+    transition: transform 0.25s var(--ease-out), box-shadow 0.25s;
+  }
   .lift span { transform: scale(1.3); box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35); }
 
   .leaflet-container { font-family: inherit; }
@@ -403,6 +428,21 @@
   .pop .ring { width: 44px; height: 44px; font-size: 0.95rem; color: var(--ink); }
   .pop h3 { margin: 0; font-size: 1.05rem; font-weight: 800; letter-spacing: -0.02em; line-height: 1.15; }
   .pop p { margin: 2px 0 0; color: var(--muted); font-size: 0.85rem; }
+  .pop .community { margin-top: 6px; font-size: 0.82rem; }
+  .pop .community strong { color: var(--ink); }
+  .community .rate {
+    border: 0; background: none; padding: 0; cursor: pointer;
+    font-size: inherit; font-weight: 700; color: var(--accent); text-decoration: underline;
+  }
+  .community .my-vote { font-weight: 700; color: var(--accent); }
+  .score-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-top: 14px; }
+  .score-btn {
+    aspect-ratio: 1; border: 0; border-radius: 14px; cursor: pointer;
+    background: var(--fill); color: var(--ink); font-size: 1.15rem; font-weight: 800;
+    transition: background 0.15s, color 0.15s, transform 0.1s ease-out;
+  }
+  .score-btn:hover { background: var(--accent); color: var(--accent-ink); }
+  .score-btn:active { transform: scale(0.94); }
   .pop-actions { grid-column: 1 / -1; display: grid; gap: 8px; margin-top: 4px; white-space: nowrap; }
   .pop-more { display: flex; gap: 8px; }
   .pop-more > * { flex: 1; }
@@ -573,6 +613,15 @@
 const SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vStf526UD4ugy9VWSJdkMZRFndOHLKgRnyJHVYH8fv8v4--9QBx6bifwtFIsZmycvege-2WdaR6OV1I/pub?output=csv";
 const PROXY = url => "https://api.allorigins.win/raw?url=" + encodeURIComponent(url);
 const START_VIEW = [4.665, -74.06]; // Bogotá
+// Calificaciones de los visitantes: un formulario de Google guarda cada voto en una hoja.
+// Mientras estos datos estén vacíos, la función queda apagada y no se muestra.
+const RATINGS = {
+  formAction: "",      // https://docs.google.com/forms/d/e/<id>/formResponse
+  entryRestaurant: "", // campo "Restaurante" del formulario (entry.123…)
+  entryScore: "",      // campo "Puntaje" del formulario (entry.456…)
+  csv: ""              // pestaña de respuestas publicada como CSV
+};
+const ratingsOn = () => !!(RATINGS.formAction && RATINGS.entryRestaurant && RATINGS.entryScore && RATINGS.csv);
 // CARTO exige clave para sus mapas base
 const CARTO_KEY = "cb1_4na0_1_97ca5fd991ca6b67f507fe2e";
 
@@ -991,13 +1040,17 @@ async function load() {
 // ===== Interfaz =====
 function setStatus(text) { document.getElementById("status").textContent = text; }
 
+// Sin búsqueda, filtro ni recomendación: se muestra la bienvenida y no la lista completa
+const isBrowsing = () => !state.reco && !state.q.trim() && !state.city && !state.style && !state.score;
+// "Más de 220" en lugar del número exacto
+const moreThan = n => (n >= 20 ? Math.floor(n / 10) * 10 : n);
+
 function updateStatus(shown) {
-  const total = state.all.length;
-  const n = shown ?? total;
-  const noPin = state.all.filter(r => r.lat == null).length;
-  let txt = state.reco ? `${n} ${n === 1 ? "recomendación" : "recomendaciones"} de ${total}`
-    : n === total ? `${total} restaurantes` : `${n} de ${total} restaurantes`;
-  if (noPin) txt += `, ${noPin} sin ubicación`;
+  const n = shown ?? 0;
+  let txt;
+  if (state.reco) txt = `${n} ${n === 1 ? "recomendación" : "recomendaciones"}`;
+  else if (isBrowsing()) txt = state.all.length ? `Más de ${moreThan(state.all.length)} restaurantes probados` : "";
+  else txt = `${n} ${n === 1 ? "resultado" : "resultados"}`;
   setStatus(txt);
   if (state.loadedAt) document.getElementById("refresh").title = `Datos de las ${state.loadedAt}. Toca para actualizar`;
 }
@@ -1061,6 +1114,7 @@ function popupHTML(r) {
       <h3>${esc(r.name)}</h3>
       ${r.style ? `<p>${esc(r.style)}</p>` : ""}
       ${r.location ? `<p>${esc(r.location)}</p>` : ""}
+      ${communityHTML(r)}
     </div>
     <div class="pop-actions">
       <a class="dir" href="${dir}" target="_blank" rel="noopener">Cómo llegar</a>
@@ -1180,7 +1234,7 @@ function recoHeader(reco) {
     ${reco.notes.map(n => `<p class="note">${esc(n)}</p>`).join("")}
     <div class="reco-actions">
       ${reco.kind === "surprise" ? `<button type="button" class="back again">Otro</button>` : ""}
-      <button type="button" class="back all">Ver todos los restaurantes</button>
+      <button type="button" class="back all">Volver</button>
       ${reco.kind ? "" : `<button type="button" class="back share-reco">Compartir</button>`}
     </div>`;
   head.querySelector(".again")?.addEventListener("click", surprise);
@@ -1216,6 +1270,37 @@ function liftPin(id) {
   lifted = target;
 }
 
+function makeMarker(r, icon, popOpts) {
+  const m = L.marker([r.lat, r.lng], { icon, title: r.name, rid: r.id }).bindPopup(() => popupHTML(r), popOpts);
+  m.on("click", () => {
+    highlight(r.id, true);
+    if (isSheet()) sheet.snap("peek");
+  });
+  return m;
+}
+
+const dotIcon = () => L.divIcon({ className: "dot", html: "<span></span>", iconSize: [16, 16], popupAnchor: [0, -6] });
+
+function teaserHTML() {
+  const icon = d => `<span class="ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg></span>`;
+  return `<div class="teaser">
+    <p class="teaser-big">Más de ${moreThan(state.all.length)} restaurantes</p>
+    <p>Probados y calificados uno por uno. Cada punto del mapa es uno de ellos.</p>
+    <div class="teaser-how">
+      <button type="button" data-act="ask">${icon('<path d="M4 6h16M4 12h10M4 18h7"/>')}<span><strong>Cuéntame qué se te antoja</strong>y te digo a dónde ir.</span></button>
+      <button type="button" data-act="map">${icon('<path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/>')}<span><strong>Toca un punto del mapa</strong>para ver su puntaje y cómo llegar.</span></button>
+      <button type="button" data-act="search">${icon('<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>')}<span><strong>Busca uno por nombre</strong>si ya sabes cuál quieres.</span></button>
+    </div>
+  </div>`;
+}
+
+function teaserAction(act) {
+  if (act === "ask") document.getElementById("ask-q").focus();
+  else if (act === "search") document.getElementById("q").focus();
+  else if (isSheet()) sheet.snap("peek");
+  else toast("Toca cualquier punto del mapa");
+}
+
 let painted = false;
 function render(fit, animate = !painted) {
   painted = true;
@@ -1230,6 +1315,18 @@ function render(fit, animate = !painted) {
   document.querySelector(".examples").hidden = !!state.reco;
   if (state.reco) list.appendChild(recoHeader(state.reco));
 
+  // Bienvenida: el mapa muestra todos como puntos sin puntaje y el panel invita a interactuar
+  if (isBrowsing() && state.all.length) {
+    const popOpts = popupOptions();
+    for (const r of state.all) if (r.lat != null) markers.set(r.id, makeMarker(r, dotIcon(), popOpts));
+    list.innerHTML = teaserHTML();
+    list.querySelectorAll("[data-act]").forEach(b => b.addEventListener("click", () => teaserAction(b.dataset.act)));
+    layer.addLayers([...markers.values()]);
+    updateStatus();
+    if (fit) fitView(state.all);
+    return;
+  }
+
   if (!rows.length) {
     if (state.reco) { updateStatus(0); return; }
     list.innerHTML = state.all.length
@@ -1242,14 +1339,7 @@ function render(fit, animate = !painted) {
   const popOpts = popupOptions();
   const frag = document.createDocumentFragment();
   rows.forEach((r, i) => {
-    if (r.lat != null) {
-      const m = L.marker([r.lat, r.lng], { icon: pinIcon(r), title: r.name, rid: r.id }).bindPopup(popupHTML(r), popOpts);
-      m.on("click", () => {
-        highlight(r.id, true);
-        if (isSheet()) sheet.snap("peek");
-      });
-      markers.set(r.id, m);
-    }
+    if (r.lat != null) markers.set(r.id, makeMarker(r, pinIcon(r), popOpts));
 
     const b = document.createElement("button");
     b.type = "button";
@@ -1291,7 +1381,7 @@ const sheet = (() => {
   const panel = document.getElementById("panel");
   const grip = panel.querySelector(".hero");
   const list = document.getElementById("list");
-  let y = 0, v = 0, target = 0, raf = 0, name = "mid", drag = null;
+  let y = 0, v = 0, target = 0, raf = 0, name = "peek", drag = null;
 
   const H = () => panel.offsetHeight;
   const peekVisible = () => {
@@ -1401,6 +1491,8 @@ function ask(text) {
 document.getElementById("map").addEventListener("click", e => {
   const b = e.target.closest(".share");
   if (b) shareRestaurant(Number(b.dataset.id));
+  const rb = e.target.closest(".rate");
+  if (rb) rate(Number(rb.dataset.id));
 }, true);
 // La dirección refleja el restaurante abierto
 map.on("popupopen", e => {
@@ -1457,6 +1549,7 @@ async function reload() {
   refreshBtn.classList.add("spin");
   try { await load(); } finally { refreshBtn.classList.remove("spin"); }
   handleDeepLink();
+  loadCommunity();
 }
 refreshBtn.addEventListener("click", reload);
 
@@ -1485,10 +1578,94 @@ const PRIVACY_HTML = `
     <li>Para mostrar el mapa y la lista, tu navegador descarga contenido de <strong>CARTO</strong> (el mapa), <strong>Google Fonts</strong> (la tipografía), <strong>Google Sheets</strong> (la lista) y <strong>cdnjs</strong> (código). Esos servicios reciben tu dirección IP y la zona del mapa que estás viendo, como en cualquier sitio con mapas.</li>
     <li>«Cómo llegar» y «Fotos y horario» abren <strong>Google Maps</strong>, que tiene su propia política de privacidad.</li>
     <li>Para funcionar sin conexión, la página guarda una copia de la lista en tu dispositivo. Puedes borrarla desde la configuración de tu navegador.</li>
-    <li>Los puntajes y comentarios son opiniones personales.</li>
+    ${ratingsOn() ? `<li><strong>Si calificas un restaurante</strong>, tu voto se envía de forma anónima (solo el restaurante y el puntaje) a un formulario de Google del dueño de la página. Tu dispositivo recuerda qué calificaste para no votar dos veces.</li>` : ""}
+    <li>Los puntajes son opiniones personales.</li>
   </ul>`;
 document.getElementById("privacy-open").addEventListener("click", () =>
   openDialog(PRIVACY_HTML, [{ label: "Entendido", primary: true }]));
+
+// ===== Calificaciones de los visitantes =====
+// Cada voto es anónimo: solo se envía el restaurante y el puntaje al formulario de Google.
+// El dispositivo recuerda sus propios votos para no calificar dos veces el mismo lugar.
+const community = new Map(); // restaurante -> { sum, n }
+const myVotes = (() => { try { return JSON.parse(localStorage.getItem("mis-votos") || "{}"); } catch { return {}; } })();
+const saveVotes = () => { try { localStorage.setItem("mis-votos", JSON.stringify(myVotes)); } catch {} };
+
+function communityHTML(r) {
+  if (!ratingsOn()) return "";
+  const c = community.get(slugOf(r));
+  const mine = myVotes[slugOf(r)];
+  const avg = c && c.n
+    ? `Comunidad: <strong>${fmtScore(Math.round((c.sum / c.n) * 10) / 10)}</strong> · ${c.n} ${c.n === 1 ? "voto" : "votos"}`
+    : "Aún sin votos de la comunidad";
+  const action = mine
+    ? `<span class="my-vote">Tu voto: ${mine}</span>`
+    : `<button type="button" class="rate" data-id="${r.id}">Califícalo</button>`;
+  return `<p class="community">${avg} · ${action}</p>`;
+}
+
+const refreshOpenPopup = () => markers.forEach(m => { if (m.isPopupOpen()) m.getPopup().update(); });
+
+async function loadCommunity() {
+  if (!ratingsOn()) return;
+  const url = RATINGS.csv + (RATINGS.csv.includes("?") ? "&" : "?") + "t=" + Date.now();
+  let text = "";
+  try {
+    const res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) throw new Error(res.status);
+    text = await res.text();
+  } catch {
+    try { text = await (await fetch(PROXY(url), { cache: "no-store" })).text(); } catch { return; }
+  }
+  const { data } = Papa.parse(text, { header: true, skipEmptyLines: true });
+  const known = new Set(state.all.map(slugOf));
+  community.clear();
+  for (const row of data) {
+    const slug = col(row, "restaurante");
+    const score = nums(col(row, "puntaje"))[0];
+    if (!known.has(slug) || !(score >= 1 && score <= 10)) continue; // ignora datos raros
+    const c = community.get(slug) || { sum: 0, n: 0 };
+    c.sum += score;
+    c.n++;
+    community.set(slug, c);
+  }
+  refreshOpenPopup();
+}
+
+function rate(id) {
+  const r = state.all.find(x => x.id === id);
+  if (!r || !ratingsOn()) return;
+  const buttons = Array.from({ length: 10 }, (_, i) =>
+    `<button type="button" class="score-btn" data-v="${i + 1}">${i + 1}</button>`).join("");
+  openDialog(`
+    <h2>¿Qué puntaje le das a ${esc(r.name)}?</h2>
+    <p>Tu voto es anónimo: solo se guarda el restaurante y el puntaje.</p>
+    <div class="score-grid">${buttons}</div>`, [{ label: "Cancelar" }]);
+  dlg.querySelectorAll(".score-btn").forEach(b => b.addEventListener("click", () => {
+    dlg.close();
+    sendVote(r, Number(b.dataset.v));
+  }));
+}
+
+async function sendVote(r, v) {
+  const slug = slugOf(r);
+  const body = new URLSearchParams({ [RATINGS.entryRestaurant]: slug, [RATINGS.entryScore]: String(v) });
+  try {
+    // Google Forms no responde a otras páginas: el envío llega aunque no podamos leer la respuesta
+    await fetch(RATINGS.formAction, { method: "POST", mode: "no-cors", body });
+  } catch {
+    toast("No se pudo enviar tu voto. Revisa tu conexión");
+    return;
+  }
+  myVotes[slug] = v;
+  saveVotes();
+  const c = community.get(slug) || { sum: 0, n: 0 };
+  c.sum += v;
+  c.n++;
+  community.set(slug, c);
+  refreshOpenPopup();
+  toast("¡Gracias! Tu voto se suma al promedio en unos minutos");
+}
 
 // ===== Cerca de mí =====
 // La ubicación se pide solo al tocar el botón, se usa en memoria para calcular distancias
