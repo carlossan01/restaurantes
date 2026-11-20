@@ -213,11 +213,23 @@
   .tools[hidden], .examples[hidden] { display: none; }
   .tools .row { display: flex; gap: 8px; }
   .search { position: relative; flex: 1; min-width: 0; }
-  .search svg { position: absolute; left: 11px; top: 50%; translate: 0 -50%; color: var(--faint); pointer-events: none; }
+  .search > svg { position: absolute; left: 11px; top: 50%; translate: 0 -50%; color: var(--faint); pointer-events: none; }
+  /* Botón para limpiar lo escrito */
+  .clear-x {
+    flex: none; width: 28px; height: 28px; display: grid; place-items: center; cursor: pointer;
+    border: 0; border-radius: 50%; background: var(--fill-strong); color: var(--muted);
+    transition: background 0.15s, color 0.15s, transform 0.1s ease-out;
+  }
+  .clear-x:hover { color: var(--ink); }
+  .clear-x:active { transform: scale(0.9); }
+  .clear-x[hidden] { display: none; }
+  .ask-field .clear-x { background: rgba(22, 26, 38, 0.08); color: #5E6577; margin-right: 2px; }
+  .search .clear-x { position: absolute; right: 6px; top: 50%; translate: 0 -50%; width: 26px; height: 26px; }
+  input[type=search]::-webkit-search-cancel-button { -webkit-appearance: none; display: none; }
   input[type=search] {
     width: 100%; font: inherit; color: var(--ink);
     background: var(--fill); border: 1px solid transparent; border-radius: 12px;
-    padding: 9px 12px 9px 34px; outline: none;
+    padding: 9px 38px 9px 34px; outline: none;
     transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
   }
   input[type=search]:focus { background: var(--surface); border-color: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); }
@@ -336,6 +348,77 @@
     background: var(--fill); color: var(--ink);
   }
   .dlg-actions button.primary { background: var(--accent); color: var(--accent-ink); }
+
+  /* ===== Arma tu plan en 3 toques ===== */
+  .big-dlg { width: min(460px, calc(100vw - 24px)); padding: 18px 18px 20px; }
+  .plan-head { display: flex; align-items: center; justify-content: space-between; color: var(--muted); font-size: 0.85rem; font-weight: 600; }
+  .icon-btn {
+    width: 36px; height: 36px; border-radius: 50%; border: 0; cursor: pointer;
+    display: grid; place-items: center; background: var(--fill); color: var(--ink);
+    transition: background 0.15s, transform 0.1s ease-out;
+  }
+  .icon-btn:hover { background: var(--fill-strong); }
+  .icon-btn:active { transform: scale(0.92); }
+  .plan-body { animation: step-in 0.34s var(--ease-out) both; }
+  .plan-body.back { animation-name: step-in-back; }
+  @keyframes step-in { from { opacity: 0; transform: translateX(28px); } }
+  @keyframes step-in-back { from { opacity: 0; transform: translateX(-28px); } }
+  .plan-body h2 { margin: 10px 0 16px; font-size: 1.7rem; font-weight: 800; letter-spacing: -0.035em; line-height: 1.05; }
+  .plan-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .plan-grid button {
+    min-height: 62px; padding: 10px 8px; border: 0; border-radius: 16px; cursor: pointer;
+    background: var(--fill); color: var(--ink); font-size: 0.95rem; font-weight: 700; line-height: 1.2;
+    transition: background 0.15s, color 0.15s, transform 0.1s ease-out;
+  }
+  .plan-grid button:hover { background: var(--accent-soft); color: var(--accent); }
+  .plan-grid button:active { transform: scale(0.95); }
+  .plan-grid button.near { grid-column: 1 / -1; background: var(--accent); color: var(--accent-ink); }
+  .plan-grid button.near:hover { filter: brightness(1.08); }
+  .plan-dots { display: flex; justify-content: center; gap: 6px; margin-top: 18px; }
+  .plan-dots i { width: 7px; height: 7px; border-radius: 999px; background: var(--fill-strong); transition: width 0.3s var(--ease-out), background 0.3s; }
+  .plan-dots i.done { background: var(--accent); opacity: 0.45; }
+  .plan-dots i.on { width: 20px; background: var(--accent); }
+
+  /* ===== Desliza y decide ===== */
+  #deck { overflow: visible; } /* la tarjeta puede salir volando por encima del mapa */
+  .deck-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+  .deck-top h2 { margin: 0; font-size: 1.25rem; font-weight: 800; letter-spacing: -0.02em; }
+  .deck-stack { position: relative; height: 330px; }
+  .card {
+    position: absolute; inset: 0; display: flex; flex-direction: column; padding: 22px;
+    border-radius: 22px; border: 1px solid var(--line); box-shadow: var(--shadow);
+    background: var(--surface); color: var(--ink);
+    touch-action: none; user-select: none; -webkit-user-select: none; cursor: grab; will-change: transform;
+  }
+  .card:active { cursor: grabbing; }
+  .card.behind { transform: translateY(14px) scale(0.94); opacity: 0.6; pointer-events: none; transition: transform 0.35s var(--ease-out), opacity 0.35s; }
+  .card .ring { width: 84px; height: 84px; font-size: 1.7rem; margin-bottom: auto; }
+  .card .ring::before {
+    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 6px), #000 calc(100% - 5.5px));
+    mask: radial-gradient(farthest-side, transparent calc(100% - 6px), #000 calc(100% - 5.5px));
+  }
+  .card h3 { margin: 0 0 6px; font-size: 1.75rem; font-weight: 800; letter-spacing: -0.035em; line-height: 1.05; }
+  .card p { margin: 2px 0 0; color: var(--muted); font-size: 0.92rem; }
+  .card .why, .card .comm { color: var(--accent); font-weight: 600; }
+  .stamp {
+    position: absolute; top: 24px; padding: 6px 12px; border: 3px solid; border-radius: 12px;
+    font-weight: 800; font-size: 1rem; letter-spacing: 0.04em; opacity: 0; pointer-events: none;
+  }
+  .stamp.yes { right: 22px; color: var(--accent); transform: rotate(10deg); }
+  .stamp.no { left: 22px; color: var(--s-low); transform: rotate(-10deg); }
+  .deck-end { position: absolute; inset: 0; display: grid; place-content: center; gap: 10px; text-align: center; padding: 20px; color: var(--muted); }
+  .deck-end strong { color: var(--ink); font-size: 1.15rem; }
+  .deck-actions { display: flex; gap: 10px; margin-top: 16px; }
+  .deck-actions button {
+    flex: 1; padding: 13px; border: 0; border-radius: 999px; cursor: pointer; font-size: 1rem; font-weight: 700;
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    transition: transform 0.1s ease-out, filter 0.15s;
+  }
+  .deck-actions button:active { transform: scale(0.95); }
+  .deck-no { background: var(--fill-strong); color: var(--ink); }
+  .deck-yes { background: var(--accent); color: var(--accent-ink); }
+  .deck-actions button:disabled { opacity: 0.4; pointer-events: none; }
+  .deck-hint { margin: 10px 0 0; text-align: center; font-size: 0.8rem; color: var(--muted); }
 
   /* Aviso breve (por ejemplo, "Enlace copiado") */
   #toast {
@@ -541,11 +624,16 @@
     <label for="ask-q">¿Qué se te antoja?</label>
     <div class="ask-field">
       <input type="text" id="ask-q" placeholder="Ej: sushi, presupuesto de 80 mil" enterkeyhint="search">
+      <button type="button" class="clear-x" id="ask-clear" aria-label="Borrar lo escrito" hidden><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
       <button type="submit" class="go" aria-label="Recomiéndame">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></svg>
       </button>
     </div>
     <div class="examples" aria-label="Ejemplos">
+      <button type="button" class="chip-action" id="plan-open">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16M4 12h10M4 18h7"/></svg>
+        Arma tu plan
+      </button>
       <button type="button" class="chip-action" id="near">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg>
         Cerca de mí
@@ -568,6 +656,7 @@
       <label class="search">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
         <input type="search" id="q" placeholder="Busca por nombre o dirección" aria-label="Buscar restaurantes">
+        <button type="button" class="clear-x" id="q-clear" aria-label="Borrar búsqueda" hidden><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
       </label>
     </div>
   </div>
@@ -578,6 +667,19 @@
   <div class="foot">Puntajes personales. <button type="button" id="privacy-open">Privacidad y ubicación</button></div>
 </aside>
 <dialog id="dlg"></dialog>
+<dialog id="plan" class="big-dlg" aria-label="Arma tu plan"></dialog>
+<dialog id="deck" class="big-dlg" aria-labelledby="deck-title">
+  <div class="deck-top">
+    <h2 id="deck-title">¿Qué tal este?</h2>
+    <button type="button" class="icon-btn deck-close" aria-label="Cerrar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+  </div>
+  <div class="deck-stack" id="deck-stack"></div>
+  <div class="deck-actions">
+    <button type="button" class="deck-no"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg> Otro</button>
+    <button type="button" class="deck-yes">¡Vamos!</button>
+  </div>
+  <p class="deck-hint">Desliza a la derecha si te provoca, a la izquierda para ver otro</p>
+</dialog>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.js"></script>
@@ -849,7 +951,7 @@ async function handleDeepLink() {
   deepLinkDone = true;
   const params = new URLSearchParams(location.search);
   const q = params.get("q"), slug = params.get("r");
-  if (q) { document.getElementById("ask-q").value = q; ask(q); return; }
+  if (q) { document.getElementById("ask-q").value = q; syncAskClear(); ask(q); return; }
   if (!slug) return;
   let r = null;
   try { r = (await api({ a: "place", id: slug })).place; } catch {}
@@ -887,16 +989,19 @@ function recoHeader(reco) {
     ${reco.chips.length ? `<div class="chips">${reco.chips.map((c, i) => `<span style="--d:${i * 50}ms">${esc(c)}</span>`).join("")}</div>` : ""}
     ${reco.notes.map(n => `<p class="note">${esc(n)}</p>`).join("")}
     <div class="reco-actions">
-      ${reco.kind === "surprise" ? `<button type="button" class="back again">Otro</button>` : ""}
+      ${reco.rows.length ? `<button type="button" class="back cards">Ver en tarjetas</button>` : ""}
       <button type="button" class="back all">Volver</button>
       ${reco.kind ? "" : `<button type="button" class="back share-reco">Compartir</button>`}
     </div>`;
-  head.querySelector(".again")?.addEventListener("click", surprise);
+  head.querySelector(".cards")?.addEventListener("click", () =>
+    openDeck(reco.rows, { title: reco.title || "Te recomiendo", more: reco.kind === "surprise" ? deck.more : null }));
   head.querySelector(".all").addEventListener("click", () => {
     state.reco = null;
     state.results = null;
     document.getElementById("q").value = "";
     document.getElementById("ask-q").value = "";
+    syncAskClear();
+    syncSearchClear();
     setAddress();
     render(true, true);
   });
@@ -948,7 +1053,7 @@ function teaserHTML() {
     <p class="teaser-big">Más de ${moreThan(state.total)} restaurantes</p>
     <p>Probados y calificados uno por uno. Cada punto del mapa es uno de ellos.</p>
     <div class="teaser-how">
-      <button type="button" data-act="ask">${icon('<path d="M4 6h16M4 12h10M4 18h7"/>')}<span><strong>Cuéntame qué se te antoja</strong>y te digo a dónde ir.</span></button>
+      <button type="button" data-act="plan">${icon('<path d="M4 6h16M4 12h10M4 18h7"/>')}<span><strong>Arma tu plan en 3 toques</strong>qué se te antoja, con quién y dónde.</span></button>
       <button type="button" data-act="map">${icon('<path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/>')}<span><strong>Toca un punto del mapa</strong>para ver su puntaje y cómo llegar.</span></button>
       <button type="button" data-act="search">${icon('<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>')}<span><strong>Busca uno por nombre</strong>si ya sabes cuál quieres.</span></button>
     </div>
@@ -956,7 +1061,7 @@ function teaserHTML() {
 }
 
 function teaserAction(act) {
-  if (act === "ask") document.getElementById("ask-q").focus();
+  if (act === "plan") openPlan();
   else if (act === "search") document.getElementById("q").focus();
   else if (isSheet()) sheet.snap("peek");
   else toast("Toca cualquier punto del mapa");
@@ -1185,12 +1290,36 @@ map.on("popupopen", async e => {
   setAddress({ r: r.slug });
 });
 map.on("popupclose", () => setAddress(state.reco?.text ? { q: state.reco.text } : undefined));
+// Limpiadores: la X aparece cuando hay algo escrito y, al tocarla, vuelve al inicio
+function wireClear(inputId, btnId, onClear) {
+  const input = document.getElementById(inputId), btn = document.getElementById(btnId);
+  const sync = () => { btn.hidden = !input.value; };
+  input.addEventListener("input", sync);
+  btn.addEventListener("click", e => {
+    e.preventDefault();
+    input.value = "";
+    sync();
+    onClear();
+    input.focus();
+  });
+  return sync;
+}
+const syncAskClear = wireClear("ask-q", "ask-clear", () => {
+  if (state.reco && !state.reco.kind) { state.reco = null; setAddress(); render(true, true); }
+});
+const syncSearchClear = wireClear("q", "q-clear", () => {
+  clearTimeout(searchTimer);
+  searchSeq++; // descarta una búsqueda que todavía esté en camino
+  if (!state.reco) { state.results = null; render(true, true); }
+});
+
 document.getElementById("ask").addEventListener("submit", e => {
   e.preventDefault();
   ask(document.getElementById("ask-q").value);
 });
 document.querySelectorAll(".examples button:not(.chip-action)").forEach(b => b.addEventListener("click", () => {
   document.getElementById("ask-q").value = b.textContent;
+  syncAskClear();
   ask(b.textContent);
 }));
 // En el móvil, al escribir la hoja sube para que el teclado no tape la caja
@@ -1352,12 +1481,12 @@ async function showNearMe(me) {
   document.getElementById("list").scrollTop = 0;
 }
 
-function locate() {
+function locate(onPos = showNearMe) {
   const btn = document.getElementById("near");
   if (!navigator.geolocation) { toast("Este navegador no permite usar la ubicación"); return; }
   btn.classList.add("busy");
   navigator.geolocation.getCurrentPosition(
-    pos => { btn.classList.remove("busy"); showNearMe(L.latLng(pos.coords.latitude, pos.coords.longitude)); },
+    pos => { btn.classList.remove("busy"); onPos(L.latLng(pos.coords.latitude, pos.coords.longitude)); },
     err => {
       btn.classList.remove("busy");
       toast(err.code === 1 ? "Sin permiso de ubicación. Puedes activarlo en tu navegador" : "No pude obtener tu ubicación. Intenta de nuevo");
@@ -1367,41 +1496,270 @@ function locate() {
 }
 
 // Antes de que el navegador pida permiso, se explica para qué es (una sola vez por dispositivo)
-async function nearMe() {
+async function nearMe(onPos = showNearMe) {
   if (!state.dots.length) return;
   let explained = false, granted = false;
   try { explained = localStorage.getItem("ubicacion-explicada") === "1"; } catch {}
   try { granted = (await navigator.permissions?.query({ name: "geolocation" }))?.state === "granted"; } catch {}
-  if (explained || granted) { locate(); return; }
+  if (explained || granted) { locate(onPos); return; }
   openDialog(`
     <h2>Restaurantes cerca de ti</h2>
     <p>Tu navegador te va a pedir permiso para usar tu ubicación.</p>
     <p><strong>Solo se usa en este dispositivo</strong> para calcular qué restaurantes tienes cerca. No se guarda ni se envía a ningún lado.</p>`,
     [
       { label: "Ahora no" },
-      { label: "Continuar", primary: true, onClick: () => { try { localStorage.setItem("ubicacion-explicada", "1"); } catch {} locate(); } }
+      { label: "Continuar", primary: true, onClick: () => { try { localStorage.setItem("ubicacion-explicada", "1"); } catch {} locate(onPos); } }
     ]);
 }
-document.getElementById("near").addEventListener("click", nearMe);
+document.getElementById("near").addEventListener("click", () => nearMe());
 
 // ===== Sorpréndeme =====
 // Elige al azar uno de los de 9 o más, preferiblemente en la zona que estás viendo en el mapa
 async function surprise() {
   if (!state.dots.length) return;
+  const btn = document.getElementById("surprise");
   const b = map.getBounds();
-  const last = state.reco?.kind === "surprise" ? state.reco.rows[0]?.id : "";
-  let r;
-  try {
-    r = (await api({ a: "surprise", bbox: [b.getSouth(), b.getWest(), b.getNorth(), b.getEast()].map(n => n.toFixed(4)).join(","), not: last })).place;
-  } catch {}
-  if (!r) { toast("No pude elegir uno ahora. Intenta de nuevo"); return; }
-  state.reco = { kind: "surprise", title: "¿Qué tal este?", text: "", chips: [], notes: [], rows: [r] };
+  const bbox = [b.getSouth(), b.getWest(), b.getNorth(), b.getEast()].map(n => n.toFixed(4)).join(",");
+  const seen = new Set();
+  const more = async () => {
+    const d = await api({ a: "deck", bbox, not: [...seen].join(",") });
+    d.rows.forEach(r => seen.add(r.id));
+    return d.rows;
+  };
+  btn.classList.add("busy");
+  let rows = [];
+  try { rows = await more(); } catch { toast("No pude elegir ahora. Intenta de nuevo"); }
+  btn.classList.remove("busy");
+  if (!rows.length) return;
+  state.reco = { kind: "surprise", title: "¿Qué tal este?", text: "", chips: [], notes: [], rows };
   state.results = null;
   state.activeId = null;
-  render(false, true);
-  openRestaurant(r);
+  setAddress();
+  render(true, true);
+  openDeck(rows, { title: "¿Qué tal este?", more });
 }
 document.getElementById("surprise").addEventListener("click", surprise);
+
+// ===== Desliza y decide =====
+// Tarjetas de a una: a la derecha "¡Vamos!" (abre el restaurante en el mapa), a la izquierda "Otro".
+const deckDlg = document.getElementById("deck");
+const deckStack = document.getElementById("deck-stack");
+const deck = { rows: [], i: 0, more: null, busy: false };
+
+function cardHTML(r) {
+  const c = r.community;
+  return `<span class="stamp yes">¡VAMOS!</span><span class="stamp no">OTRO</span>
+    ${ringHTML(r)}
+    <h3>${esc(r.name)}</h3>
+    <p>${esc([r.style, r.city].filter(Boolean).join(", "))}</p>
+    ${r.location ? `<p>${esc(r.location)}</p>` : ""}
+    ${whyOf(r) ? `<p class="why">${esc(whyOf(r))}</p>` : ""}
+    ${c && c.n ? `<p class="comm">Comunidad: ${fmtScore(c.avg)} (${c.n} ${c.n === 1 ? "voto" : "votos"})</p>` : ""}`;
+}
+
+function renderDeck() {
+  deckStack.innerHTML = "";
+  const done = deck.i >= deck.rows.length;
+  deckDlg.querySelector(".deck-yes").disabled = done;
+  deckDlg.querySelector(".deck-no").disabled = done;
+  if (done) {
+    deckStack.innerHTML = `<div class="deck-end"><strong>Eso es todo por ahora</strong>
+      <span>Puedes ver la lista o volver a empezar.</span>
+      <div class="dlg-actions" style="justify-content:center"><button type="button" class="again">Empezar de nuevo</button><button type="button" class="primary list">Ver la lista</button></div></div>`;
+    deckStack.querySelector(".again").addEventListener("click", () => { deck.i = 0; renderDeck(); });
+    deckStack.querySelector(".list").addEventListener("click", () => deckDlg.close());
+    return;
+  }
+  const next = deck.rows[deck.i + 1];
+  if (next) {
+    const behind = document.createElement("div");
+    behind.className = "card behind";
+    behind.innerHTML = cardHTML(next);
+    deckStack.appendChild(behind);
+  }
+  const card = document.createElement("div");
+  card.className = "card";
+  card.innerHTML = cardHTML(deck.rows[deck.i]);
+  deckStack.appendChild(card);
+  dragCard(card);
+}
+
+function openDeck(rows, { title = "¿Qué tal este?", more = null } = {}) {
+  if (!rows.length) return;
+  deck.rows = rows.slice();
+  deck.i = 0;
+  deck.more = more;
+  document.getElementById("deck-title").textContent = title;
+  renderDeck();
+  if (!deckDlg.open) deckDlg.showModal();
+}
+
+// La tarjeta sigue al dedo; al soltarla se decide según hacia dónde iba (posición + impulso)
+function dragCard(card) {
+  let start = null, x = 0, hist = [];
+  const yes = card.querySelector(".stamp.yes"), no = card.querySelector(".stamp.no");
+  card.addEventListener("pointerdown", e => {
+    if (deck.busy) return;
+    start = { x: e.clientX, y: e.clientY };
+    hist = [{ t: e.timeStamp, x: e.clientX }];
+    x = 0;
+    card.setPointerCapture(e.pointerId);
+    card.style.transition = "none";
+  });
+  card.addEventListener("pointermove", e => {
+    if (!start) return;
+    x = e.clientX - start.x;
+    const y = (e.clientY - start.y) * 0.25;
+    card.style.transform = `translate(${x}px, ${y}px) rotate(${x / 18}deg)`;
+    yes.style.opacity = Math.max(0, Math.min(1, x / 90));
+    no.style.opacity = Math.max(0, Math.min(1, -x / 90));
+    hist.push({ t: e.timeStamp, x: e.clientX });
+    while (hist.length > 2 && e.timeStamp - hist[0].t > 100) hist.shift();
+  });
+  const end = () => {
+    if (!start) return;
+    start = null;
+    const a = hist[0], b = hist[hist.length - 1];
+    const v = b.t > a.t ? ((b.x - a.x) / (b.t - a.t)) * 1000 : 0; // px/s
+    const projected = x + v * 0.2;
+    if (projected > 110) decide(1);
+    else if (projected < -110) decide(-1);
+    else {
+      card.style.transition = reducedMotion() ? "none" : "transform 0.5s cubic-bezier(0.2, 1.4, 0.4, 1)";
+      card.style.transform = "";
+      yes.style.opacity = no.style.opacity = 0;
+    }
+  };
+  card.addEventListener("pointerup", end);
+  card.addEventListener("pointercancel", end);
+}
+
+async function decide(dir) {
+  if (deck.busy || deck.i >= deck.rows.length) return;
+  deck.busy = true;
+  const card = deckStack.querySelector(".card:not(.behind)");
+  const r = deck.rows[deck.i];
+  if (card && !reducedMotion()) {
+    card.querySelector(dir > 0 ? ".stamp.yes" : ".stamp.no").style.opacity = 1;
+    card.style.transition = "transform 0.38s cubic-bezier(0.3, 0.7, 0.4, 1), opacity 0.38s";
+    card.style.transform = `translate(${dir * 520}px, -30px) rotate(${dir * 22}deg)`;
+    card.style.opacity = "0";
+    const behind = deckStack.querySelector(".card.behind");
+    if (behind) { behind.style.transform = "none"; behind.style.opacity = "1"; }
+    await new Promise(res => setTimeout(res, 300));
+  }
+  deck.busy = false;
+  if (dir > 0) { goTo(r); return; }
+  deck.i++;
+  if (deck.i >= deck.rows.length && deck.more) {
+    try {
+      const extra = await deck.more();
+      deck.rows.push(...extra);
+      if (state.reco?.kind === "surprise") { state.reco.rows = deck.rows.slice(); render(false); }
+    } catch {}
+  }
+  renderDeck();
+}
+
+// "¡Vamos!": cierra las tarjetas y muestra el restaurante en el mapa con su ficha
+function goTo(r) {
+  deckDlg.close();
+  if (!markers.has(r.id) && state.reco) { state.reco.rows = [r, ...state.reco.rows.filter(x => x.id !== r.id)]; render(false); }
+  openRestaurant(r);
+}
+
+deckDlg.querySelector(".deck-yes").addEventListener("click", () => decide(1));
+deckDlg.querySelector(".deck-no").addEventListener("click", () => decide(-1));
+deckDlg.querySelector(".deck-close").addEventListener("click", () => deckDlg.close());
+deckDlg.addEventListener("click", e => { if (e.target === deckDlg) deckDlg.close(); });
+deckDlg.addEventListener("keydown", e => {
+  if (e.key === "ArrowRight") { e.preventDefault(); decide(1); }
+  if (e.key === "ArrowLeft") { e.preventDefault(); decide(-1); }
+});
+
+// ===== Arma tu plan en 3 toques =====
+// Cada opción se traduce a palabras que el recomendador ya entiende
+const PLAN_STEPS = [
+  { title: "¿Qué se te antoja?", options: [["Carne", "carne"], ["Sushi", "sushi"], ["Pizza", "pizza"], ["Hamburguesa", "hamburguesa"],
+    ["Mexicana", "mexicana"], ["Asiática", "asiática"], ["Italiana", "italiana"], ["Mar", "mariscos"], ["Desayuno", "desayuno"],
+    ["Café", "café"], ["Dulce", "algo dulce"], ["Lo que sea", ""]] },
+  { title: "¿Con quién vas?", options: [["Solo", ""], ["En pareja", "en pareja"], ["Con amigos", "con amigos"], ["En familia", "en familia"], ["A celebrar", "para celebrar"]] },
+  { title: "¿Dónde?", options: [["Cerca de mí", "@cerca"], ["Bogotá", "en Bogotá"], ["Medellín", "en Medellín"], ["Cali", "en Cali"], ["Cartagena", "en Cartagena"], ["Donde sea", ""]] }
+];
+const planDlg = document.getElementById("plan");
+let plan = { step: 0, picks: [] };
+
+function openPlan() {
+  if (!state.dots.length) return;
+  plan = { step: 0, picks: [] };
+  renderPlan(1);
+  planDlg.showModal();
+}
+
+function renderPlan(dir) {
+  const st = PLAN_STEPS[plan.step];
+  planDlg.innerHTML = `
+    <div class="plan-head">
+      <button type="button" class="icon-btn plan-back" aria-label="Atrás" style="visibility:${plan.step ? "visible" : "hidden"}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg></button>
+      <span>Paso ${plan.step + 1} de ${PLAN_STEPS.length}</span>
+      <button type="button" class="icon-btn plan-close" aria-label="Cerrar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    </div>
+    <div class="plan-body${dir < 0 ? " back" : ""}">
+      <h2>${st.title}</h2>
+      <div class="plan-grid">${st.options.map(([label, q], i) =>
+        `<button type="button" data-i="${i}"${q === "@cerca" ? ' class="near"' : ""}>${esc(label)}</button>`).join("")}</div>
+    </div>
+    <div class="plan-dots">${PLAN_STEPS.map((_, i) => `<i class="${i === plan.step ? "on" : i < plan.step ? "done" : ""}"></i>`).join("")}</div>`;
+  planDlg.querySelector(".plan-close").addEventListener("click", () => planDlg.close());
+  planDlg.querySelector(".plan-back").addEventListener("click", () => { plan.step--; plan.picks.pop(); renderPlan(-1); });
+  planDlg.querySelectorAll(".plan-grid button").forEach(b => b.addEventListener("click", () => {
+    plan.picks[plan.step] = st.options[Number(b.dataset.i)];
+    if (plan.step < PLAN_STEPS.length - 1) { plan.step++; renderPlan(1); }
+    else finishPlan();
+  }));
+}
+planDlg.addEventListener("click", e => { if (e.target === planDlg) planDlg.close(); });
+
+async function finishPlan() {
+  planDlg.close();
+  const [[, antojo], [, quien], [, donde]] = plan.picks;
+  const near = donde === "@cerca";
+  // Sin antojo ni ocasión, se muestran los mejor calificados
+  const query = [antojo, quien, near ? "" : donde].filter(Boolean).join(" ") || "algo especial";
+  document.getElementById("ask-q").value = query;
+  syncAskClear();
+  if (near) { nearMe(me => planNear(query, me)); return; }
+  await ask(query);
+  if (state.reco?.rows.length) openDeck(state.reco.rows, { title: "Tu plan" });
+}
+
+// El plan con "Cerca de mí": el celular elige los restaurantes cercanos y solo envía sus códigos
+async function planNear(query, me) {
+  const icon = L.divIcon({ className: "me", html: "<span></span>", iconSize: [18, 18] });
+  if (meMarker) meMarker.setLatLng(me);
+  else meMarker = L.marker(me, { icon, interactive: false, keyboard: false, zIndexOffset: 2000 }).addTo(map);
+  const withD = state.dots.map(d => ({ id: d.id, d: me.distanceTo([d.lat, d.lng]) })).sort((a, b) => a.d - b.d);
+  const nearby = withD.filter(x => x.d <= 12000).slice(0, 40);
+  const pool = nearby.length >= 3 ? nearby : withD.slice(0, 12);
+  const dist = new Map(pool.map(x => [x.id, x.d]));
+  if (isSheet()) sheet.snap("mid");
+  showLoadingList("Armando tu plan…");
+  let d;
+  try { d = await api({ a: "ask", q: query, ids: pool.map(x => x.id).join(",") }); }
+  catch { toast("No pude responder ahora. Intenta de nuevo"); render(false); return; }
+  const notes = nearby.length >= 3 ? d.notes : ["No tienes restaurantes de la lista cerca; estos son los más cercanos.", ...d.notes];
+  state.reco = {
+    kind: "near", title: "Tu plan cerca de ti", text: "", notes, rows: d.rows, me,
+    chips: ["Cerca de ti", ...d.chips],
+    why: r => [dist.has(r.id) ? `A ${fmtDist(dist.get(r.id))}` : "", r.why].filter(Boolean).join(", ")
+  };
+  state.results = null;
+  state.activeId = null;
+  setAddress();
+  render(true, true);
+  if (d.rows.length) openDeck(d.rows, { title: "Tu plan" });
+}
+document.getElementById("plan-open").addEventListener("click", openPlan);
 
 // ===== App instalable y modo sin conexión =====
 if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")) {
