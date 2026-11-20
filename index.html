@@ -971,7 +971,8 @@ async function shareLink(title, text, url) {
     try { await navigator.share({ title, text, url }); } catch {}
     return;
   }
-  const content = `${text}\n${url}`;
+  // Solo el enlace: así sirve igual pegado en un chat que en la barra del navegador
+  const content = url;
   let ok = false;
   try { await navigator.clipboard.writeText(content); ok = true; } catch {}
   if (!ok) {
